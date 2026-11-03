@@ -26,7 +26,7 @@ export const PARAMS = {
       source: `${KOLZCHUT} ; ${OS_EXPERTS}`,
       note: 'בגרסה הראשונה של המנוע (calc.py) הוזנו בטעות מדרגות 2021. לא השפיע על מקרה הבדיקה של 2020 כי ההכנסה בתוך המדרגה הראשונה.',
     },
-    pensionIncomeCeiling: { value: 8_800, status: 'crosschecked', source: 'תקרת הכנסה מזכה לשכיר 8,800 ₪ לחודש: מנורה, "תקרות הפקדה 2020" ; protocol.co.il (7% = 616 ₪)' },
+    pensionIncomeCeiling: { value: 8_800, status: 'verified', source: 'לוח העזר של רשות המסים 2020, סעיף 47(א)(1)(1): 8,800 ₪ לחודש (עותק: https://www.prisha.co.il/UserFiles/File/pdf/hoz/parameters2020.pdf) ; מנורה "תקרות הפקדה 2020"' },
     creditPointValue: {
       value: 2_628, status: 'verified',
       source: 'כפתור "חישוב" במערכת 1301, מקרה בדיקה 2020: 2.25 נקודות = 5,913 ₪ (219 ₪ לחודש)',
@@ -35,7 +35,7 @@ export const PARAMS = {
   2021: {
     brackets: { value: b(75_480, 108_360, 173_880, 241_680, 502_920, 647_640), status: 'crosschecked', source: `${KOLZCHUT} ; ${OS_EXPERTS}` },
     creditPointValue: { value: 2_616, status: 'crosschecked', source: '218 ₪ לחודש. לאמת מול טופס 106 של 2021' },
-    pensionIncomeCeiling: { value: 8_700, status: 'unverified', source: `כל זכות: תקרת הפקדה 609 ₪ לחודש (7% × 8,700). מקור אחד. ${KZ_PENSION}` },
+    pensionIncomeCeiling: { value: 8_700, status: 'crosschecked', source: `לשכת רואי החשבון, טבלאות מס 2021: 104,400 ₪ לשנה (= 8,700 לחודש) https://sites.icpas.org.il/hs/wp-content/uploads/sites/2/2021/12/טבלאות-מס-הכנסה-שנת-המס-2021-למבחני-שנת-2022.pdf ; כל זכות: 609 ₪ לחודש = 7% × 8,700. ${KZ_PENSION}` },
   },
   2022: {
     brackets: { value: b(77_400, 110_880, 178_080, 247_440, 514_920, 663_240), status: 'crosschecked', source: `${KOLZCHUT} ; ${OS_EXPERTS}` },

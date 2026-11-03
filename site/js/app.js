@@ -373,6 +373,7 @@ function settlementFor(year, name) {
   if (!key) return { msg: `"${name}" לא מופיע ברשימת היישובים המוטבים של ${year}. בדקו את האיות (בחרו מהרשימה). אם הוא באמת לא ברשימה, אין הטבה לשנה הזו, וכדאי לענות "לא" בשאלה על יישוב מזכה.` };
   const row = table[key];
   if (row.unclear) return { name: key, msg: `לא הצלחנו לקרוא בוודאות את השיעור של ${key} ב-${year} מהמקור הרשמי, ולכן השנה הזו לא תחושב עד שנבדוק.` };
+  if (row.complex) return { name: key, msg: `ב-${year} ההטבה של ${key} לא הייתה אחידה לכל השנה (${row.complex === true ? 'תנאים מיוחדים' : row.complex}). חישוב כזה עוד לא נתמך, ומומלץ להתייעץ עם רואה חשבון.` };
   if (row.from) return { name: key, msg: `ב-${year} השיעור של ${key} השתנה באמצע השנה (מ-${row.from.split('-').reverse().join('.')}). חישוב כזה עוד לא נתמך.` };
   return { name: key, row };
 }
@@ -453,8 +454,9 @@ function renderResults() {
   const totalIdx = refunds.reduce((s, r) => s + (r.indexation || 0), 0);
   let html = `<h1>התוצאה</h1>`;
   if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ החזר צפוי ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}</div><div class="amount">${fmt(total)} ₪</div><div>ועוד כ-${fmt(totalIdx)} ₪ הצמדה וריבית (הערכה)</div></div>`;
-  if (refunds.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה, לכל ${refunds.length === 1 ? 'השנה' : `${refunds.length} השנים`} עם החזר. אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
-  else html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך נוצר לכל שנה שיוצאת בהחזר: שלב-אחר-שלב באתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. כרגע אין שנה כזו${rs.some((r) => r.status === 'blocked') ? '. בשנים שמסומנות "עוד אי אפשר לחשב" כתוב מה חסר, ואחרי שזה יושלם המסמך יופיע כאן' : ''}.</p></div>`;
+  const forGuide = rs.filter(guideable);
+  if (forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. השנים במסמך: ${forGuide.map((r) => r.year).join(', ')}.${forGuide.some((r) => r.status !== 'refund') ? ' בשנה שלא חושבה, בודקים את התוצאה בכפתור "חישוב" באתר לפני שמשדרים.' : ''} אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
+  if (!forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך מסביר שלב-אחר-שלב מה לכתוב בכל שדה באתר של רשות המסים. הוא נוצר לכל שנה שכל המסמכים שלה הועלו. ${rs.some((r) => r.status === 'blocked') ? 'בשנים שסומנו "עוד אי אפשר לחשב" חסרים מסמכים: ראו "מה עוד חסר" בשלב "שנים ומסמכים".</p><button class="btn secondary" type="button" data-go="years">להשלמת המסמכים</button>' : 'כרגע אין שנה שכדאי להגיש לה.</p>'}</div>`;
   html += '<div class="row"><button class="btn secondary" type="button" data-go="years">חזרה לתיקון התשובות</button></div>';
   html += '<p class="muted small">החישוב לפי מה שמסרת. לפני כל הגשה תלחצו על "חישוב" באתר רשות המסים ותשוו למספרים כאן.</p>';
   for (const r of rs) {
@@ -480,16 +482,25 @@ function renderResults() {
     if (r.status === 'blocked') html += `<div class="notice warn">${r.blocks.map(esc).join('<br>')}</div><p class="small muted">כשחסר מסמך, אפשר להשלים אותו ולחזור. כשהכלל עוד לא אומת אצלנו, נעדכן את האפליקציה בקרוב. לא נחשב שום דבר שלא בדקנו מול מקור רשמי.</p>`;
     if (r.status === 'out') html += `<div class="notice warn">${esc(r.blocks[0])}</div>`;
     if (r.status !== 'refund') html += `<button class="btn link" type="button" data-edit="${r.year}">תיקון התשובות ל-${r.year}</button>`;
-    if (r.status === 'refund') html += `<p class="small muted">מועד אחרון להגשה: ${deadline(r.year)}</p><button class="btn" data-guide="${r.year}" type="button">מדריך הגשה ל-${r.year}</button>`;
+    if (guideable(r)) html += `<p class="small muted">מועד אחרון להגשה: ${deadline(r.year)}</p><button class="btn${r.status === 'refund' ? '' : ' secondary'}" data-guide="${r.year}" type="button">${r.status === 'refund' ? `מדריך הגשה ל-${r.year}` : `מדריך מילוי ל-${r.year} (בלי תוצאה)`}</button>`;
     html += '</div>';
   }
   return html;
 }
 
 // ---------- step: guide (המסמך המסכם) ----------
+// שנה שאי אפשר לחשב רק בגלל כלל שעוד לא אומת אצלנו, אבל כל המסמכים שלה הועלו: אפשר לתת מדריך מילוי,
+// כי השדות ב-1301 מגיעים מהמסמכים ומהתשובות. את התוצאה בודקים בכפתור "חישוב" באתר, לפני השידור.
+function docsCompleteFor(year) {
+  const c = caseFor(year);
+  return c.people.every((p) => get(`years.${year}.${p.role}.mode`) === 'manual' || get(`years.${year}.${p.role}.docsOk`) === 'yes')
+    && !resultFor(year).blocks.some((b) => /חסר|מסמך|אישור/.test(b));
+}
+const guideable = (r) => r.status === 'refund' || (r.status === 'blocked' && docsCompleteFor(r.year));
+
 function guideTabs(year) {
   const r = resultFor(year);
-  const g = buildGuide(year, caseFor(year), r);
+  const g = buildGuide(year, caseFor(year), r.status === 'refund' ? r : null);
   let html = '';
   g.tabs.forEach((t, i) => {
     html += `<div class="card"><h3 style="margin-top:0">${i + 1}. ${t.title}</h3>`;
@@ -506,8 +517,10 @@ function guideTabs(year) {
 function renderGuide() {
   const sel = get('screen.selectedYears') || [];
   const one = state.ui.guideYear !== 'all' && Number(state.ui.guideYear);
-  const years = one ? [one] : sel.filter((y) => resultFor(y).status === 'refund');
-  const rs = years.map((y) => resultFor(y));
+  const years = one ? [one] : sel.filter((y) => guideable(resultFor(y)));
+  const all = years.map((y) => resultFor(y));
+  const rs = all.filter((r) => r.status === 'refund');
+  const unknown = all.filter((r) => r.status !== 'refund');
   const total = rs.reduce((t, r) => t + r.balance, 0);
   const today = new Date().toLocaleDateString('he-IL');
   let html = `<div class="row noprint"><button class="btn" type="button" id="printBtn">הורדה כ-PDF / הדפסה</button><button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>
@@ -515,15 +528,17 @@ function renderGuide() {
     <p class="muted small">הופק ב"מגיע לי" בתאריך ${today}, לפי התשובות והמסמכים שהעלית. זה לא ייעוץ מס. לפני כל הגשה לוחצים "חישוב" באתר רשות המסים ומשווים.</p>
     <div class="card"><h2 style="margin-top:0">סיכום</h2><table class="calc">
       ${rs.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}</div></td><td class="num">${fmt(r.balance)} ₪</td></tr>`).join('')}
+      ${unknown.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}</div></td><td class="num">לא חושב</td></tr>`).join('')}
       ${rs.length > 1 ? `<tr><td><b>סה"כ</b><div class="muted small">ועוד כ-${fmt(rs.reduce((t, r) => t + (r.indexation || 0), 0))} ₪ הצמדה וריבית (הערכה)</div></td><td class="num"><b>${fmt(total)} ₪</b></td></tr>` : ''}
-    </table></div>
+    </table>${unknown.length ? `<div class="notice warn"><b>${unknown.map((r) => r.year).join(', ')}: את התוצאה עוד לא חישבנו</b>, כי חסר לנו כלל שעוד לא אימתנו (${esc([...new Set(unknown.flatMap((r) => r.blocks))].join('; '))}). השדות במדריך נכונים, כי הם מגיעים מהמסמכים ומהתשובות שלך. לפני השידור לוחצים "חישוב" באתר: <b>אם יוצא "מס ששולם ביתר", משדרים. אם יוצאת "יתרת חוב", לא משדרים</b>, כי בקשת החזר לא מחייבת להגיש, והגשה הייתה יוצרת חוב.</div>` : ''}</div>
     <div class="card"><h2 style="margin-top:0">לפני שמתחילים</h2><ul>
       <li>כמה זמן: בערך 40 דקות רצופות לכל שנה. המערכת מנתקת אחרי זמן, אז לוחצים "שמירה" אחרי כל לשונית.</li>
       <li>כניסה: <a href="https://www.gov.il/he/service/itc135" target="_blank" rel="noopener">השירות "הגשת דו"ח שנתי / בקשה להחזר מס" באתר רשות המסים</a>. מזדהים עם תעודת זהות, קוד משתמש וקוד חד-פעמי.</li>
       <li>מגישים כל שנה בנפרד, לפי הסדר במסמך הזה. כל שנה היא דו"ח משלה.</li>
       <li>את הקבצים שצריך לצרף לכל שנה תמצאו בסוף הפרק של אותה שנה. אפשר להוריד אותם מהאפליקציה בשם ברור (בשלב "שנים ומסמכים").</li></ul></div>`;
   for (const y of years) {
-    html += `<section class="guide-year"><h2>שנת ${y}: ${fmt(resultFor(y).balance)} ₪</h2>${guideTabs(y).html}</section>`;
+    const ry = resultFor(y);
+    html += `<section class="guide-year"><h2>שנת ${y}: ${ry.status === 'refund' ? `${fmt(ry.balance)} ₪` : 'התוצאה לא חושבה, בודקים ב"חישוב" באתר'}</h2>${guideTabs(y).html}</section>`;
   }
   html += `<section class="guide-year"><h2>אחרי ההגשה</h2>${afterBody()}</section>`;
   html += '<div class="row noprint"><button class="btn" type="button" data-go="after">הגשתי, מה עכשיו?</button> <button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>';
