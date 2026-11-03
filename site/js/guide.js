@@ -72,6 +72,19 @@ export function buildGuide(year, yearCase, result) {
   const credits = [];
   const ds = self?.flags?.dischargedSoldier;
   if (ds) credits.push({ field: 'חייל משוחרר', value: `תאריך השחרור מהשירות הסדיר${ds.level === 'partial' ? ', ושירות חלקי (12 עד 22/23 חודשים)' : ''}`, source: 'תשובות: שנת השחרור, אורך השירות. נקודות הזיכוי מחושבות לפי מספר החודשים בשנה הזו' });
+  const kd = self?.flags?.kids;
+  if (kd?.ages?.length && kd.column) {
+    const groups = {};
+    for (const a of kd.ages) { const g = a === 0 ? 'שנולדו בשנה הזו' : a <= 5 ? 'בגיל 1–5' : a <= 17 ? 'בגיל 6–17' : 'בגיל 18'; groups[g] = (groups[g] || 0) + 1; }
+    credits.push({ field: 'ילדים', value: Object.entries(groups).map(([g, n]) => `${n} ${g}`).join(', '), source: `תשובות: שנות הלידה של הילדים. ${kd.column === 'mother' ? 'קצבת הילדים נכנסת לחשבון שלך' : 'קצבת הילדים נכנסת לחשבון של ההורה השני'}` });
+  }
+  const fl = self?.flags || {};
+  if (fl.degree) credits.push({ field: 'תואר אקדמי', value: 'תואר ראשון, שנת הסיום', source: 'תשובות: סוג התואר ושנת הסיום. צרופה: אישור זכאות לתואר מהמוסד' });
+  if (fl.singleParent) credits.push({ field: 'הורה יחיד', value: 'מסמנים הורה יחיד', source: 'תשובה: ההורה השני נפטר, או שהילדים רשומים רק עליך' });
+  if (fl.alimony) credits.push({ field: 'מזונות לבן/בת זוג לשעבר', value: 'מסמנים, וממלאים את הסכום ששולם', source: 'תשובה: נישאת מחדש ומשלם/ת מזונות לפי פסק דין. צרופה: פסק הדין' });
+  if (fl.spousePoints) credits.push({ field: 'בן/בת זוג בלי הכנסה', value: 'מסמנים (שדה 021)', source: 'תשובה: בן/בת הזוג בלי הכנסה, ואחד מכם בגיל פרישה או בן/בת הזוג נכה/עיוור' });
+  const dn = self?.credits?.donations;
+  if (dn > 0) credits.push({ field: 'תרומות (סעיף 46), שדה 037', value: `${fmt(dn)} ₪`, source: 'תשובה: סכום התרומות. צרופה: הקבלות (או רשימה מאתר רשות המסים "תרומות")' });
   const st = self?.settlement;
   if (st?.livedMonths > 0 && st.rate > 0) {
     credits.push({ field: 'תושב יישוב מזכה', value: `${st.livedMonths} חודשים, ${st.rate}% עד ${fmt(st.ceiling)} ₪`, source: 'תשובה: היישוב ומספר החודשים. השיעור והתקרה מלוח העזר של רשות המסים' });

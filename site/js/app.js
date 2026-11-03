@@ -93,8 +93,15 @@ function renderMe(ctx) {
   <div class="card">
     ${q.choice('me.gender', 'מין', [['m', 'גבר'], ['f', 'אישה']], 'אישה מקבלת חצי נקודת זיכוי נוספת.')}
     ${q.yn('me.hasKids', `היו לך ילדים מתחת לגיל 19 ${selText()}?`, 'כולל ילד שנולד באותה שנה. ילדים מזכים בנקודות זיכוי לפי הגיל שלהם בכל שנה.')}`;
-  if (get('me.hasKids') === 'yes') html += `<div class="sub">${q.text('me.kidsBirthYears', 'שנות הלידה של הילדים', 'מופרדות בפסיק, למשל: 2022, 2025')}</div>`;
+  if (get('me.hasKids') === 'yes') {
+    html += `<div class="sub">${q.text('me.kidsBirthYears', 'שנות הלידה של הילדים', 'מופרדות בפסיק, למשל: 2022, 2025')}
+      ${q.yn('me.kidsLiveWith', 'הילדים גרים איתך באותו בית?', 'אם יש ילד שגר אצל ההורה השני (למשל אחרי גירושין), עונים "לא".')}`;
+    if (get('me.kidsLiveWith') === 'yes') html += q.choice('me.allowance', 'לאיזה חשבון בנק נכנסת קצבת הילדים מביטוח לאומי?', [['me', 'לחשבון שלי'], ['other', 'לחשבון של ההורה השני']], 'ההורה שמקבל את הקצבה מקבל יותר נקודות זיכוי על ילדים מגיל 6. ברוב המשפחות הקצבה נכנסת לחשבון של האם. אפשר לבדוק באזור האישי בביטוח לאומי.');
+    html += '</div>';
+  }
   html += q.yn('me.degree', 'סיימת אי פעם תואר אקדמי או תעודת מקצוע? (בכל שנה, לא רק בשנים שבחרת)', 'בשאלה הבאה נשאל באיזו שנה. נקודת הזיכוי ניתנת רק בשנה שאחרי הסיום, אז האפליקציה תבדוק לבד אם היא נוגעת לשנים שבחרת.');
+  if (get('me.degree') === 'yes') html += `<div class="sub">${q.choice('me.degreeType', 'איזה תואר או תעודה?', [['ba', 'תואר ראשון'], ['ma', 'תואר שני'], ['other', 'דוקטורט, רפואה, או תעודת מקצוע']], 'תואר ראשון מזכה בנקודת זיכוי אחת בשנה שאחרי הסיום.')}
+    ${get('me.degreeType') === 'ba' ? q.yn('me.degreeDefer', 'ביקשת לדחות את נקודת הזיכוי על התואר לשנה מאוחרת יותר? (למשל כי המשכת ישר לתואר שני)', 'רוב האנשים לא ביקשו, ועונים "לא".') : ''}</div>`;
   if (get('me.degree') === 'yes') html += `<div class="sub">${q.num('me.degreeYear', 'באיזו שנה סיימת את התואר או את הלימודים לתעודה?', 'השנה שבה קיבלת זכאות לתואר (כתוב באישור הזכאות מהמוסד)', { min: 1960, max: 2030 })}</div>`;
   html += q.yn('me.served', 'שירתת בשירות צבאי סדיר (חובה) או בשירות לאומי?', 'הכוונה לשירות הסדיר, לא למילואים. חיילים משוחררים מקבלים נקודות זיכוי ל-3 שנים אחרי השחרור. על מילואים נשאל בהמשך, בתוך כל שנה.');
   if (get('me.served') === 'yes') {
@@ -301,7 +308,11 @@ function renderYear(ctx, year) {
     if (get(`${y}.spouseIncome`) === 'no') html += q.yn(`${y}.spouseSpecial`, 'בן/בת הזוג הגיע/ה לגיל פרישה, או נכה או עיוור/ת?', 'במקרים האלה יש נקודת זיכוי נוספת (שדה 021).');
     html += '</div>';
   }
-  if (m === 'divorced') html += q.yn(`${y}.alimony`, `שילמת מזונות לבן/בת זוג לשעבר בשנת ${year}?`);
+  if (couple) html += q.yn(`${y}.alimonyEx`, `שילמת בשנת ${year} מזונות לבן/בת זוג מנישואים קודמים, לפי פסק דין?`, 'מי שנישא מחדש ומשלם מזונות לבן/בת הזוג הקודם/ת מקבל נקודת זיכוי. מזונות לילדים לא נחשבים כאן.');
+  if (m === 'divorced' || m === 'single' || m === 'widowed') html += q.yn(`${y}.alimony`, `שילמת מזונות (לבן/בת זוג לשעבר או לילדים) בשנת ${year}?`);
+  const kidsNow = kidsYears().some((b) => year - b >= 0 && year - b <= 18);
+  if (kidsNow && (m === 'single' || m === 'divorced')) html += q.yn(`${y}.soleParent`, `בשנת ${year}, הילדים היו רשומים במשרד הפנים רק עליך, בלי הורה שני רשום?`, 'אם כן, את/ה "הורה יחיד" ומקבל/ת נקודת זיכוי נוספת. אם יש הורה שני רשום (גם אם הוא לא בתמונה), עונים "לא".');
+  if (kidsNow && m === 'widowed') html += '<div class="notice info small">אלמן/ה עם ילדים נחשב/ת "הורה יחיד" ומקבל/ת נקודת זיכוי נוספת. נחשב אותה לשנה הזו.</div>';
   html += `
     ${q.yn(`${y}.otherIncome`, `היו לך${couple ? ' או לבן/בת הזוג' : ''} בשנת ${year} הכנסות מהשכרת דירה, מכירת מניות או קריפטו, דיבידנד, או הכנסות מחו"ל?`)}
     ${q.yn(`${y}.severance`, `קיבלת${couple ? ' (או בן/בת הזוג)' : ''} בשנת ${year} כסף לחשבון הבנק מפיצויים, או משכת כסף מקופת פנסיה, גמל או קרן השתלמות לפני הזמן?`, 'אם עזבת עבודה והפיצויים נשארו בקרן הפנסיה ולא משכת אותם, עונים "לא". המעסיק אולי נתן לך טופס 161, אבל אם הכסף לא יצא מהקרן אין כאן הכנסה לדווח עליה. קרן השתלמות אחרי 6 שנים: גם "לא".')}
@@ -418,16 +429,27 @@ function dischargedFor(year) {
 
 function caseFor(year) {
   const y = (k) => get(`years.${year}.${k}`);
-  const kids = kidsYears().some((b) => year - b >= 0 && year - b <= 18);
+  const ages = kidsYears().map((b) => year - b).filter((a) => a >= 0 && a <= 18);
+  const kids = ages.length > 0;
+  const kidsFlag = (forSpouse) => kids && {
+    ages, notWithMe: get('me.kidsLiveWith') === 'no',
+    column: get('me.allowance') ? ((get('me.allowance') === 'me') !== forSpouse ? 'mother' : 'father') : null,
+  };
   const m = y('marital');
   const couple = m === 'married';
   const dy = Number(get('me.degreeYear'));
   const flags = {
-    kids,
-    singleParent: kids && !couple && m !== 'commonLaw',
-    degree: get('me.degree') === 'yes' && (year === dy || year === dy + 1),
+    kids: kidsFlag(false),
+    singleParent: kids && (m === 'widowed' || ((m === 'single' || m === 'divorced') && y('soleParent') === 'yes')),
+    degree: get('me.degree') === 'yes' && get('me.degreeType') === 'ba' && get('me.degreeDefer') !== 'yes' && year === dy + 1,
     dischargedSoldier: dischargedFor(year),
-    alimony: y('alimony') === 'yes',
+    alimony: couple && y('alimonyEx') === 'yes',
+    stop: [
+      get('me.degree') === 'yes' && get('me.degreeType') && get('me.degreeType') !== 'ba' && (year === dy + 1 || year === dy + 2) && 'סיימת תואר שני, תואר ברפואה או תעודת מקצוע. נקודות הזיכוי על אלה תלויות בסוג הלימודים ובאפשרות לדחות אותן, ואת זה האפליקציה עוד לא מחשבת. מומלץ רואה חשבון לשנה הזו.',
+      get('me.degree') === 'yes' && get('me.degreeType') === 'ba' && get('me.degreeDefer') === 'yes' && year >= dy + 1 && year <= dy + 3 && 'ביקשת לדחות את נקודת הזיכוי על התואר (למשל בגלל לימודי המשך). דחייה כזו האפליקציה עוד לא מחשבת. מומלץ רואה חשבון לשנה הזו.',
+      kids && (m === 'single' || m === 'divorced') && y('soleParent') === 'no' && 'הורה גרוש או לא נשוי שיש לילדים הורה שני רשום מקבל נקודות זיכוי לפי כללים נוספים (משמורת, מזונות, מי מקבל את הקצבה), שעוד לא אימתנו. מומלץ רואה חשבון לשנה הזו.',
+      (m === 'divorced' || m === 'single' || m === 'widowed') && y('alimony') === 'yes' && 'תשלום מזונות משנה את נקודות הזיכוי לפי מי מקבל אותם ולפי פסק הדין, ואת זה האפליקציה עוד לא מחשבת. מומלץ רואה חשבון לשנה הזו.',
+    ].filter(Boolean),
     spousePoints: couple && y('spouseIncome') === 'no' && y('spouseSpecial') === 'yes',
   };
   const self = { role: 'self', ...personFrom(`years.${year}.self`, get('me.gender'), flags, year) };
@@ -442,7 +464,7 @@ function caseFor(year) {
   Object.assign(self.settlement, { livedMonths: lived, rate: st?.row?.rate || 0, ceiling: st?.row?.ceiling || 0, missing: st?.msg });
   const people = [self];
   if (couple && y('spouseIncome') === 'yes') {
-    const sp = { role: 'spouse', ...personFrom(`years.${year}.spouse`, y('spouseGender'), { kids }, year) };
+    const sp = { role: 'spouse', ...personFrom(`years.${year}.spouse`, y('spouseGender'), { kids: kidsFlag(true) }, year) };
     Object.assign(sp.settlement, { livedMonths: lived, rate: self.settlement.rate, ceiling: self.settlement.ceiling, missing: self.settlement.missing });
     people.push(sp);
   }

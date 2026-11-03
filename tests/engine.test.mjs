@@ -118,12 +118,12 @@ test('פנסיה מתחת לתקרה: 35% מכל ההפקדה', () => {
   assert.equal(computeYear(2022, { people: [p] }).results[0].lines.pensionCredit, 1_260);
 });
 
-test('פנסיה 2026: תקרה שלא אומתה עוצרת את השנה', () => {
+test('2026: מדרגות, ערך נקודה ותקרת פנסיה מלוח העזר 2026', () => {
   const p = person();
   p.employers[0].pensionDeposit = 5_000;
   const r = computeYear(2026, { people: [p] });
-  assert.equal(r.status, 'blocked');
-  assert.match(r.blocks.join(), /תקרת ההכנסה המזכה/);
+  assert.notEqual(r.status, 'blocked');
+  assert.equal(taxOnIncome(228_000, PARAMS[2026].brackets.value), Math.round(84_120 * 0.1 + (120_720 - 84_120) * 0.14 + (228_000 - 120_720) * 0.2));
 });
 
 test('פנסיה 2021: 8,700 ₪ לחודש (לשכת רו"ח + כל זכות)', () => {
@@ -153,5 +153,43 @@ test('טבלת היישובים: שניר 12% בכל השנים, והתקרות 
   assert.deepEqual(SETTLEMENTS[2025]['שניר'], { rate: 12, ceiling: 213_240 });
   assert.ok(SETTLEMENTS[2021]['שיזף'].complex, 'שיזף 2021 התחיל באמצע השנה');
   assert.ok(SETTLEMENTS[2020]['קריית שמונה'].from, 'קריית שמונה 2020 השתנה ב-1.7');
-  for (const y of [2020, 2021, 2022, 2023, 2024, 2025]) assert.ok(Object.keys(SETTLEMENTS[y]).length > 470);
+  assert.deepEqual(SETTLEMENTS[2026]['שניר'], { rate: 12, ceiling: 213_240 });
+  assert.deepEqual(SETTLEMENTS[2026]['אשקלון'], { rate: 7, ceiling: 146_640 });
+  for (const y of [2020, 2021, 2022, 2023, 2024, 2025, 2026]) assert.ok(Object.keys(SETTLEMENTS[y]).length > 470);
+});
+
+test('נקודות ילדים לאב: תואם לטופסי 106 אמיתיים 2024 ו-2025', () => {
+  const r24 = computeYear(2024, { people: [person({ flags: { kids: { ages: [2], column: 'father' } } })] });
+  assert.equal(r24.results[0].lines.points, 6.75);
+  const r25 = computeYear(2025, { people: [person({ flags: { kids: { ages: [3, 0], column: 'father' } } })] });
+  assert.equal(r25.results[0].lines.points, 8.25);
+  const r22 = computeYear(2022, { people: [person({ flags: { kids: { ages: [0], column: 'father' } } })] });
+  assert.equal(r22.results[0].lines.points, 3.75);
+});
+
+test('נקודות ילדים: גיל 6–12 ב-2022 = אם 2 (הוראת שעה), 2021 כמו 2020, 2026 כמו 2024, ילדים שלא גרים איתך = רו"ח', () => {
+  assert.equal(computeYear(2022, { people: [person({ gender: 'f', flags: { kids: { ages: [8], column: 'mother' } } })] }).results[0].lines.points, 4.75);
+  assert.equal(computeYear(2021, { people: [person({ flags: { kids: { ages: [1], column: 'father' } } })] }).results[0].lines.points, 4.75);
+  assert.equal(computeYear(2021, { people: [person({ gender: 'f', flags: { kids: { ages: [8], column: 'mother' } } })] }).results[0].lines.points, 3.75);
+  assert.equal(computeYear(2026, { people: [person({ flags: { kids: { ages: [1], column: 'father' } } })] }).results[0].lines.points, 6.75);
+  assert.equal(computeYear(2024, { people: [person({ flags: { kids: { ages: [2], notWithMe: true } } })] }).status, 'cpa');
+  assert.equal(computeYear(2024, { people: [person({ gender: 'f', flags: { kids: { ages: [8], column: 'mother' } } })] }).results[0].lines.points, 4.75);
+});
+
+test('תואר ראשון, הורה יחיד, מזונות, בן/בת זוג: נקודה אחת כל אחד', () => {
+  // טופס 106 אמיתי 2023: אב לילד בן 1, תואר ראשון שהסתיים ב-2022 = 2.25 + 2.5 + 1 = 5.75
+  const r = computeYear(2023, { people: [person({ flags: { kids: { ages: [1], column: 'father' }, degree: true } })] });
+  assert.equal(r.results[0].lines.points, 5.75);
+  for (const k of ['singleParent', 'alimony', 'spousePoints']) {
+    assert.equal(computeYear(2024, { people: [person({ flags: { [k]: true } })] }).results[0].lines.points, 3.25, k);
+  }
+  assert.equal(computeYear(2024, { people: [person({ flags: { stop: ['x'] } })] }).status, 'cpa');
+});
+
+test('תרומות: 35%, מינימום לכל שנה, עד 30% מההכנסה', () => {
+  const d = (year, donations, income = 200_000) => computeYear(year, { people: [person({ employers: [{ income, taxWithheld: 30_000 }], credits: { donations } })] });
+  assert.equal(d(2024, 1_000).results[0].lines.donationsCredit, 350);
+  assert.equal(d(2024, 150).results[0].lines.donationsCredit, 0); // מתחת למינימום 207
+  assert.equal(d(2024, 100_000).results[0].lines.donationsCredit, Math.round(0.35 * 60_000));
+  assert.equal(d(2025, 1_000).results[0].lines.donationsCredit, 350);
 });
