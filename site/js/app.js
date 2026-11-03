@@ -135,9 +135,9 @@ const HOWTO_LOGIN = `<li><b>כניסה:</b> <a class="btn small-btn" href="${TAX
 const HOWTO_SUMMARY = `<details class="howto" open><summary>איך מורידים מרשות המסים</summary><ol>
   ${HOWTO_LOGIN}
   <li>בעמוד הראשי בוחרים <b>"טפסי 106"</b>, ואז את השנה.</li>
-  <li>מורידים <b>שני סוגי קבצים</b>:<br>
-    (א) <b>"ריכוז נתוני שכר מכלל המעסיקים"</b>: קובץ אחד, הרשימה של כל מי ששילם לך משכורת באותה שנה.<br>
-    (ב) <b>"טופס 106"</b>: אחד לכל מעסיק ברשימה.<br>
+  <li>במסך <b>"מידע מרוכז מהמעסיקים"</b> מורידים <b>שני סוגי קבצים</b>:<br>
+    (א) לוחצים על הקישור <b>"למסמך ריכוז הכנסות"</b> (ליד הכותרת): קובץ אחד, הרשימה של כל מי ששילם לך משכורת באותה שנה.<br>
+    (ב) ליד כל מעסיק ברשימה לוחצים <b>"להצגת טופס 106"</b> ושומרים את הקובץ: אחד לכל מעסיק.<br>
     <span class="small muted">הטעות הנפוצה: להוריד רק את ה-106 ולשכוח את הריכוז. בלי הריכוז אין לנו דרך לדעת שלא חסר מעסיק.</span></li></ol></details>`;
 const HOWTO_BTL = `<details class="howto" open><summary>איך מורידים מביטוח לאומי</summary><ol>
   <li><b>כניסה:</b> <a class="btn small-btn" href="${BTL_LOGIN}" target="_blank" rel="noopener">פתיחת האזור האישי בביטוח לאומי ←</a> ואז בתפריט <b>"אישורים"</b>.</li>
@@ -148,12 +148,15 @@ const NAMING_TIP = `<div class="notice info small"><b>טיפ:</b> חלק מהא�
   <bdi>2021-ריכוז-נתוני-שכר.pdf</bdi>, <bdi>2021-106-שם-המעסיק.pdf</bdi>, <bdi>2021-ביטוח-לאומי-אישור-תשלומים-שנתי.pdf</bdi>. אחרי ההעלאה נציע שם לכל קובץ שזיהינו, ואפשר לשמור עותק בשם הזה.</div>`;
 const BTL_LABELS = { miluim: 'תגמולי מילואים', unemployment: 'דמי אבטלה', maternity: 'דמי לידה', injury: 'דמי פגיעה בעבודה' };
 
+// מי שמבקש הטבת יישוב צריך לצרף אישור תושבות. כרגע ההטבה נשאלת על המגיש עצמו.
+const needsResidency = (base, year) => base.endsWith('.self') && get(`years.${year}.settlement`) === 'yes' && get(`years.${year}.settlement12`) === 'yes';
+
 // מה המסמכים אומרים, ומה עוד חסר. משמש גם את התצוגה וגם את החישוב.
 function docsState(base, year) {
   const docs = get(`${base}.docs`) || [];
   const s = summarizeDocs(docs, year);
   const need = [];
-  if (!s.summary) need.push('ריכוז נתוני שכר מכלל המעסיקים (רשות המסים)');
+  if (!s.summary) need.push('ריכוז הכנסות מכל המעסיקים (רשות המסים: הקישור "למסמך ריכוז הכנסות")');
   for (const e of s.missing) need.push(`טופס 106 של ${e.name} (תיק ניכויים ${e.taxFile})`);
   if (!s.btlAnnual) need.push('אישור תשלומים שנתי (ביטוח לאומי)');
   const btl = [];
@@ -168,6 +171,7 @@ function docsState(base, year) {
   for (const c of s.certs) if (c.kind !== 'miluim' && !(s.btlAnnual?.benefits || []).some((b) => b.kind === c.kind)) {
     btl.push({ kind: c.kind || 'other', label: BTL_LABELS[c.kind] || 'תשלום מביטוח לאומי', gross: c.gross, taxWithheld: c.tax, source: c.fileName });
   }
+  if (needsResidency(base, year) && !s.residency) need.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב');
   for (const e of s.employers) if (e.income == null) need.push(`לא הצלחנו לקרוא את ההכנסה בקובץ "${e.source}". נסו את טופס ה-106 מרשות המסים (נספח ב').`);
   return { s, need, btl, complete: need.length === 0 };
 }
@@ -177,16 +181,17 @@ function checklist(base, year, who) {
   const { s, btl } = docsState(base, year);
   const docs = get(`${base}.docs`) || [];
   const mark = (ok) => ok ? '<span class="ok">✓ הועלה</span>' : '<span class="todo">☐ עוד לא</span>';
-  const tax = [[`"ריכוז נתוני שכר מכלל המעסיקים" ${year}`, !!s.summary]];
-  if (s.summary) for (const e of s.expected) tax.push([`"טופס 106" של ${e.name}`, !s.missing.some((m) => m.taxFile === e.taxFile)]);
-  else tax.push([`"טופס 106" מכל מעסיק (אחרי שתעלה את הריכוז נראה כאן את כולם)`, docs.some((d) => d.type === '106')]);
+  const tax = [[`"למסמך ריכוז הכנסות" ${year} (ריכוז נתוני שכר)`, !!s.summary]];
+  if (s.summary) for (const e of s.expected) tax.push([`"להצגת טופס 106" של ${e.name}`, !s.missing.some((m) => m.taxFile === e.taxFile)]);
+  else tax.push([`"להצגת טופס 106" ליד כל מעסיק (אחרי שתעלה את הריכוז נראה כאן את כולם)`, docs.some((d) => d.type === '106')]);
   const bl = [[`"אישור תשלומים שנתי" ${year}`, !!s.btlAnnual]];
   for (const b of s.btlAnnual?.benefits || []) bl.push([`"אישור שנתי למס הכנסה" על ${BTL_LABELS[b.kind]}`, btl.some((x) => x.kind === b.kind && x.taxWithheld != null)]);
   if (get(`${base}.miluimDirect`) === 'yes') bl.push(['"אישור שנתי למס הכנסה על תשלום תגמולי מילואים"', s.certs.some((c) => c.kind === 'miluim')]);
+  const res = needsResidency(base, year) ? `<tr><td colspan="2" class="small muted">מהמועצה האזורית או מהעירייה (כי ענית שגרת ביישוב מזכה)</td></tr><tr><td>${mark(!!s.residency)}</td><td><b>"אישור תושבות" (טופס 1312א) לשנת ${year}</b></td></tr>` : '';
   const rows = (list) => list.map(([n, ok]) => `<tr><td>${mark(ok)}</td><td><b>${esc(n)}</b></td></tr>`).join('');
   return `<div class="card sub checklist"><b>מה צריך להוריד ${who === 'spouse' ? 'לבן/בת הזוג' : ''} לשנת ${year}</b>
-    <table class="files"><tr><td colspan="2" class="small muted">מרשות המסים (האזור האישי ← "טפסי 106")</td></tr>${rows(tax)}
-    <tr><td colspan="2" class="small muted">מביטוח לאומי (האזור האישי ← "אישורים")</td></tr>${rows(bl)}</table>
+    <table class="files"><tr><td colspan="2" class="small muted">מרשות המסים (האזור האישי ← "טפסי 106" ← "מידע מרוכז מהמעסיקים")</td></tr>${rows(tax)}
+    <tr><td colspan="2" class="small muted">מביטוח לאומי (האזור האישי ← "אישורים")</td></tr>${rows(bl)}${res}</table>
     <div class="small muted">הרשימה מתעדכנת לבד אחרי שמעלים קבצים.</div></div>`;
 }
 
@@ -209,7 +214,8 @@ function renderPersonDocs(q, base, who, year) {
       const what = d.type === 'error' ? 'לא הצלחנו לפתוח את הקובץ' : (DOC_TYPES[d.type] || d.type) + (d.year ? `, ${d.year}` : '') + (d.employer?.name ? `, ${d.employer.name}` : '');
       const better = ok ? suggestName(d, year, who) : null;
       const rename = better && better !== d.fileName ? `<div class="small">שם מומלץ: <bdi>${esc(better)}</bdi> <button class="btn link" type="button" data-saveas="${base}|${i}">שמירת עותק בשם הזה</button></div>` : '';
-      return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div>${rename}</td><td class="actions"><button class="btn link" type="button" data-view="${base}|${i}">צפייה</button> <button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
+      const tag = needsResidency(base, year) && ['unknown', 'scanned'].includes(d.type) ? `<div class="small"><button class="btn link" type="button" data-residency="${base}|${i}">זה אישור התושבות מהמועצה</button></div>` : '';
+      return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div>${rename}${tag}</td><td class="actions"><button class="btn link" type="button" data-view="${base}|${i}">צפייה</button> <button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
     }).join('')}</table>`;
   }
   const { s, need, btl, complete } = docsState(base, year);
@@ -238,7 +244,7 @@ function renderManualDocs(q, base, who, year) {
   let html = `<h3>מסמכים ${pron} לשנת ${year}: הקלדה ידנית</h3>
     <p><button class="btn link" type="button" data-mode="${base}|upload">חזרה להעלאת קבצים (מומלץ)</button></p>
     ${HOWTO_SUMMARY}
-    ${q.num(`${base}.employersCount`, `כמה מעסיקים מופיעים ב"ריכוז נתוני שכר מכלל המעסיקים" ${pron} לשנת ${year}?`,
+    ${q.num(`${base}.employersCount`, `כמה מעסיקים מופיעים במסך "מידע מרוכז מהמעסיקים" ברשות המסים ${pron} לשנת ${year}?`,
       'אם לא עבדת בכלל בשנה הזו, כתבו 0.', { max: 12 })}`;
   const n = Math.min(Number(get(`${base}.employersCount`)) || 0, 12);
   for (let i = 0; i < n; i++) {
@@ -308,8 +314,10 @@ function renderYear(ctx, year) {
     if (st?.row?.rate) html += `<div class="notice info small">לפי <a href="${BOOKLET(year)}" target="_blank" rel="noopener">לוח העזר של רשות המסים ל-${year}</a>: ${esc(st.name)}, הנחה של ${st.row.rate}% מההכנסה, עד הכנסה של ${fmt(st.row.ceiling)} ₪ בשנה.</div>`;
     else if (st?.msg) html += `<div class="notice warn small">${esc(st.msg)}</div>`;
     html += `${q.num(`${y}.settlementMonths`, `כמה חודשים בשנת ${year} גרת שם בפועל?`, 'ההטבה ניתנת רק על החודשים שגרת שם.', { min: 1, max: 12 })}
-      ${q.yn(`${y}.settlement12`, 'גרת ביישוב מזכה לפחות 12 חודשים ברציפות (אפשר שחלק מהם בשנה אחרת)?', 'זה תנאי של סעיף 11. מי שעבר ליישוב, מקבל את ההטבה אחרי 12 חודשים, גם על החודשים הראשונים.')}
-      <div class="help">צריך לצרף לדו"ח "אישור תושבות" (טופס 1312א) מהרשות המקומית או מהמועצה האזורית.</div></div>`;
+      ${q.yn(`${y}.settlement12`, 'עד היום, גרת ביישוב הזה לפחות 12 חודשים ברציפות? (מותר שחלק מהחודשים יהיו בשנה אחרת)', 'החוק נותן את ההטבה רק למי שגר ביישוב שנה שלמה לפחות. דוגמה: עברת ליישוב בספטמבר ונשארת שם עד ספטמבר בשנה הבאה, אז עונים "כן", וההטבה ניתנת גם על החודשים הראשונים. מי שגר שם פחות מ-12 חודשים בסך הכל עונה "לא", ואז אין הטבה לשנה הזו.')}`;
+    if (get(`${y}.settlement12`) === 'no') html += '<div class="notice warn small">בלי 12 חודשים ברציפות אין הטבת יישוב, ולכן לא נחשב אותה לשנה הזו.</div>';
+    if (get(`${y}.settlement12`) === 'yes') html += `<div class="notice info small"><b>מסמך שצריך להשיג: "אישור תושבות" (טופס 1312א).</b> הוא לא נמצא אצל רשות המסים, ואין להורדה באזור האישי. מבקשים אותו מהמועצה האזורית או מהעירייה של היישוב: באתר המועצה (בדרך כלל תחת "אישור תושבות" או "טפסים") או במשרדי המועצה. אומרים שזה "אישור תושבות לצורך הנחה במס הכנסה, לשנת ${year}". כשיש לך אותו, מעלים אותו בשלב המסמכים, והוא יצורף לדו"ח. אם המעסיק כבר נתן לך את ההנחה בתלוש, כנראה כבר מסרת לו עותק, ואפשר לבקש ממנו.</div>`;
+    html += '</div>';
   }
   html += q.yn(`${y}.lifeIns`, `שילמת בעצמך בשנת ${year} על ביטוח חיים, כולל ביטוח חיים של משכנתא?`, 'הכוונה לביטוח שאתה משלם, למשל בהוראת קבע לחברת הביטוח או דרך הבנק של המשכנתא. ביטוח שהמעסיק מפריש לך דרך התלוש לא נחשב כאן. אם כן, תצטרך להוריד "אישור שנתי למס הכנסה" מהאזור האישי באתר של חברת הביטוח שלך.');
   if (get(`${y}.lifeIns`) === 'yes') html += `<div class="sub">${q.num(`${y}.lifeInsAmount`, 'סכום הפרמיות בשנה לפי האישור')}</div>`;
@@ -680,6 +688,12 @@ app.addEventListener('change', async (ev) => {
 app.addEventListener('click', async (ev) => {
   const t = ev.target.closest('button');
   if (!t) return;
+  if (t.dataset.residency) {
+    const [base, i] = t.dataset.residency.split('|');
+    const docs = get(`${base}.docs`) || [];
+    if (docs[Number(i)]) docs[Number(i)] = { ...docs[Number(i)], type: 'residency', taggedByUser: true };
+    set(`${base}.docs`, docs); save(); render(); return;
+  }
   if (t.dataset.rmdoc) {
     const [base, i] = t.dataset.rmdoc.split('|');
     const docs = get(`${base}.docs`) || [];

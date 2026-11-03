@@ -52,6 +52,7 @@ export function suggestName(d, year, who) {
     btlAnnual: 'ביטוח-לאומי-אישור-תשלומים-שנתי',
     btlMiluim: 'ביטוח-לאומי-אישור-מס-מילואים',
     btlTaxCert: `ביטוח-לאומי-אישור-מס-${BTL[d.kind] || 'תשלום'}`,
+    residency: 'אישור-תושבות-1312א',
   }[d.type];
   return n ? `${y}-${p}${n}.pdf` : null;
 }

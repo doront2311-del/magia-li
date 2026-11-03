@@ -15,6 +15,7 @@ export const DOC_TYPES = {
   btlTaxCert: 'אישור שנתי למס הכנסה (ביטוח לאומי)',
   legacy106: 'מסמך בקידוד ישן שאי אפשר לקרוא',
   scanned: 'מסמך סרוק (תמונה)',
+  residency: 'אישור תושבות (טופס 1312א, מהמועצה או העירייה)',
   unknown: 'מסמך שלא זיהינו',
 };
 
@@ -163,6 +164,7 @@ export function parseDocument(rawLines) {
     }
     return { type: 'btlAnnual', year: m ? Number(m[1]) : null, benefits, idTail: idTail(L) };
   }
+  if (/אישורתושב|1312א|1312/.test(all)) return { type: 'residency' };
   return { type: 'unknown' };
 }
 
@@ -212,5 +214,6 @@ export function summarizeDocs(docs, year) {
   const certs = forYear.filter((d) => d.type === 'btlMiluim' || d.type === 'btlTaxCert');
   const legacy = forYear.filter((d) => d.type === 'legacy106' || d.type === 'scanned');
   const unknown = forYear.filter((d) => d.type === 'unknown');
-  return { summary, forms, expected, missing, employers, btlAnnual, certs, legacy, unknown, issues };
+  const residency = docs.find((d) => d.type === 'residency') || null;
+  return { residency, summary, forms, expected, missing, employers, btlAnnual, certs, legacy, unknown, issues };
 }

@@ -74,6 +74,11 @@ test('קובץ בלי טקסט = סרוק; טקסט לא מוכר = לא זוה�
   assert.equal(parseDocument([['תלוש שכר לחודש']]).type, 'unknown');
 });
 
+test('אישור תושבות מהמועצה מזוהה', () => {
+  assert.equal(parseDocument([['מועצה אזורית'], ['אישור תושב לצורך הנחה במס הכנסה']]).type, 'residency');
+  assert.equal(parseDocument([['טופס 1312א']]).type, 'residency');
+});
+
 test('קידוד ישן (ISO-8859-8 כאותיות לטיניות) מתורגם לעברית', () => {
   const lat = (h) => [...h].map((c) => (c >= 'א' && c <= 'ת' ? String.fromCharCode(c.charCodeAt(0) - 0x05d0 + 0xe0) : c)).join('');
   const rev = (n) => [...n].reverse().join('');
