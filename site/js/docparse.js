@@ -172,7 +172,8 @@ export function parseDocument(rawLines) {
     return { type: 'btlAnnual', year: m ? Number(m[1]) : null, benefits, idTail: idTail(L) };
   }
   if (/אישורתושב|1312א|1312/.test(all)) return { type: 'residency' };
-  if (/ניהולחשבון/.test(all)) return { type: 'bankProof' };
+  // כל בנק קורא לו אחרת: "אישור ניהול חשבון", "אישור על ניהול חשבון", "אישור בעלות בחשבון".
+  if (/ניהולחשבון|בעלותבחשבון|בעלותעלחשבון|בעלותחשבון/.test(all)) return { type: 'bankProof' };
   // אישור שהמועצה מילאה: לפעמים רק הנתונים הם טקסט, והטופס עצמו תמונת רקע. מזהים לפי שם הרשות ותאריך.
   if (/מועצהאזורית|מועצהמקומית|עיריית|עירייה|ועדמקומי/.test(all) && /\d{2}\/\d{2}\/\d{4}/.test(all)) return { type: 'residency' };
   return { type: 'unknown' };
@@ -235,6 +236,7 @@ export function summarizeDocs(docs, year) {
     taxWithheld: f.fields.taxWithheld ?? 0,
     pensionDeposit: f.fields.pensionDeposit ?? 0,
     insuredIncome: f.fields.insuredIncome ?? 0,
+    employerPension: f.fields.employerPension ?? 0,
     settlementCode: f.fields.settlement ? 1 : 0,
     source: f.fileName,
   }));

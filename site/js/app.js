@@ -198,9 +198,10 @@ function docsState(base, year) {
     btl.push({ kind: c.kind || 'other', label: BTL_LABELS[c.kind] || 'תשלום מביטוח לאומי', gross: c.gross, taxWithheld: c.tax, source: c.fileName });
   }
   if (needsResidency(base, year) && !s.residency) need.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב');
-  if (needsBank(base) && !s.bankProof) need.push('אישור ניהול חשבון מהבנק (כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח)');
+  // אישור ניהול החשבון הוא רק צרופה להגשה: הוא מופיע ברשימה, אבל לא עוצר את החישוב ואת המדריך.
+  const later = needsBank(base) && !s.bankProof ? ['אישור ניהול חשבון מהבנק (צריך אותו רק כצרופה בהגשה, כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח)'] : [];
   for (const e of s.employers) if (e.income == null) need.push(`לא הצלחנו לקרוא את ההכנסה בקובץ "${e.source}". נסו את טופס ה-106 מרשות המסים (נספח ב').`);
-  return { s, need, btl, complete: need.length === 0, partial: partialFrom(s, base, year) };
+  return { s, need: [...need, ...later], btl, complete: need.length === 0, partial: partialFrom(s, base, year) };
 }
 
 // כשחסרים מסמכים: מה עדיין אפשר לחשב, מה לא נכלל ולאיזה כיוון זה יכול לשנות, ומה חוסם לגמרי.
@@ -289,7 +290,11 @@ function renderPersonDocs(q, base, who, year) {
   }
   const { s, need, btl, complete } = docsState(base, year);
   set(`${base}.docsOk`, complete ? 'yes' : '');
-  const bad = docs.filter((d) => ['unknown', 'scanned', 'legacy106', 'error'].includes(d.type));
+  // קובץ שלא זיהינו אבל אולי הוא אישור מהבנק או מהמועצה (כל אחד נראה אחרת): בלי אזהרה, רק שאלה ליד הקובץ.
+  const canTag = needsBank(base) || needsResidency(base, year);
+  const bad = docs.filter((d) => ['legacy106', 'error'].includes(d.type) || (!canTag && ['unknown', 'scanned'].includes(d.type)));
+  const askTag = canTag ? docs.filter((d) => ['unknown', 'scanned'].includes(d.type)) : [];
+  if (askTag.length) html += `<div class="notice info">לא זיהינו לבד את ${askTag.map((d) => `"${esc(d.fileName)}"`).join(', ')}. כל בנק ומועצה מוציאים את האישור בצורה אחרת, אז אם זה האישור מהבנק או מהמועצה, לוחצים על הכפתור ליד הקובץ ברשימה למעלה.</div>`;
   if (bad.length) html += `<div class="notice warn">לא הצלחנו לקרוא: ${bad.map((d) => `"${esc(d.fileName)}"`).join(', ')}. טפסים סרוקים, או טפסים ישנים שהמעסיק שלח, לפעמים לא נקראים. במקומם מורידים את טופס ה-106 מהאזור האישי ברשות המסים (נספח ב'), כמו בהסבר למעלה.</div>`;
   if (s.issues.length) html += `<div class="notice warn">${s.issues.map(esc).join('<br>')}</div>`;
   if (s.employers.length || btl.length) {
@@ -303,10 +308,10 @@ function renderPersonDocs(q, base, who, year) {
   }
   if (need.length) {
     html += `<div class="notice warn"><b>עוד חסר:</b><ul>${need.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
-    html += q.choice(`${base}.partialOk`, 'אין לך עכשיו את כל המסמכים?', [['yes', 'להמשיך בלי, ולקבל הערכה חלקית']],
+    if (!complete) html += q.choice(`${base}.partialOk`, 'אין לך עכשיו את כל המסמכים?', [['yes', 'להמשיך בלי, ולקבל הערכה חלקית']],
       'נחשב רק לפי מה שהועלה, בלי לנחש את החסר. בתוצאה תופיע כוכבית עם מה שלא נכלל, ורשימה של המסמכים שחסרים. אפשר לחזור ולהעלות אותם מתי שרוצים.');
   }
-  if (complete) html += `<div class="notice info small">✓ כל המסמכים לשנה הזו הועלו. אם משהו בטבלה נראה לך לא נכון: <button class="btn link" type="button" data-mode="${base}|manual">תיקון ידני של המספרים</button></div>`;
+  if (complete) html += `<div class="notice info small">✓ כל המסמכים שצריך לחישוב הועלו. אם משהו בטבלה נראה לך לא נכון: <button class="btn link" type="button" data-mode="${base}|manual">תיקון ידני של המספרים</button></div>`;
   html += `<p class="small"><button class="btn link" type="button" data-mode="${base}|manual">אין לי את הקבצים, אני רוצה להקליד ידנית</button></p>`;
   return html;
 }
@@ -444,7 +449,7 @@ function renderYears(ctx) {
 function personFrom(base, gender, flags, year) {
   if (get(`${base}.mode`) !== 'manual') {
     const { s, btl, partial } = docsState(base, year);
-    const employers = s.employers.map((e) => ({ name: e.name, income: e.income, taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, insuredIncome: e.insuredIncome, settlementCode: e.settlementCode }));
+    const employers = s.employers.map((e) => ({ name: e.name, income: e.income, taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, insuredIncome: e.insuredIncome, employerPension: e.employerPension, settlementCode: e.settlementCode }));
     if (partial.adjust) employers.push(partial.adjust);
     return { gender, flags, employers, btl: btl.map((b) => ({ label: b.label, gross: b.gross, taxWithheld: b.taxWithheld, doc: b.doc })), credits: {}, settlement: { employerGave: employers.reduce((t, e) => t + (e.settlementCode || 0), 0) },
       blocks: partial.blocks, excluded: partial.excluded, filingDocs: partial.filingDocs };
@@ -535,7 +540,12 @@ function caseFor(year) {
     Object.assign(sp.settlement, { livedMonths: lived, rate: self.settlement.rate, ceiling: self.settlement.ceiling, missing: self.settlement.missing });
     people.push(sp);
   }
-  return { maritalStatus: m, people, needsBankProof: get('me.prevRefund') !== 'yes' };
+  // תשובות שהמדריך צריך כדי להגיד מה למלא בכל שדה (המנוע לא צריך אותן).
+  const answers = {
+    dischargeYear: get('me.dischargeYear'), dischargeMonth: get('me.dischargeMonth'), degreeYear: get('me.degreeYear'),
+    settlementName: st?.name || y('settlementName'), lifeIns: self.credits.lifeInsurance, disability: self.credits.disabilityInsurance, institution: self.credits.institutionRelative,
+  };
+  return { maritalStatus: m, people, answers, needsBankProof: get('me.prevRefund') !== 'yes' };
 }
 
 function resultFor(year) {
@@ -656,7 +666,11 @@ function guideTabs(year) {
     html += `<div class="card"><h3 style="margin-top:0">${i + 1}. ${t.title}</h3>`;
     if (t.steps) html += `<ol>${t.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>`;
     if (t.fields.length) {
-      html += `<table class="fields">${t.fields.map((f) => `<tr><td><b>${esc(f.field)}</b><div class="src">מקור: ${esc(f.source)}</div></td><td>${esc(f.value)}</td><td class="noprint">${/\d/.test(f.value) || f.field === 'שמות המעבידים' ? `<button class="copy" type="button" data-copy="${esc(String(f.value).replace(/,/g, ''))}">העתקה</button>` : ''}</td></tr>`).join('')}</table>`;
+      const n = t.fields.filter((f) => f.kind === 'fill' || f.kind === 'mark').length;
+      if (t.fields.some((f) => f.kind)) html += `<p class="small">בלשונית הזו ממלאים או מסמנים <b>${n}</b> שורות (מודגשות). כל שאר השורות ברשימה נשארות כמו שהן, וכתוב ליד כל אחת למה.</p>`;
+      html += `<table class="fields">${t.fields.map((f) => f.kind === 'section'
+        ? `<tr class="sec"><td colspan="3">${esc(f.field)}</td></tr>`
+        : `<tr class="${f.kind || 'fill'}"><td>${f.kind === 'skip' || f.kind === 'auto' ? esc(f.field) : `<b>${esc(f.field)}</b>`}<div class="src">${f.kind === 'skip' || f.kind === 'auto' ? '' : 'מקור: '}${esc(f.source)}</div></td><td>${f.kind === 'skip' || f.kind === 'auto' ? esc(f.value) : `<b>${esc(f.value)}</b>`}</td><td class="noprint">${(f.kind || 'fill') === 'fill' && (/^[\d,]+$/.test(f.value) || f.field === 'שמות המעבידים') ? `<button class="copy" type="button" data-copy="${esc(String(f.value).replace(/,/g, ''))}">העתקה</button>` : ''}</td></tr>`).join('')}</table>`;
     }
     if (t.note) html += `<p class="small muted">${esc(t.note)}</p>`;
     html += '</div>';

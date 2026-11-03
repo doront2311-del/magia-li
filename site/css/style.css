@@ -94,6 +94,9 @@ table.calc td.num { text-align: left; white-space: nowrap; font-variant-numeric:
 .fields { width: 100%; border-collapse: collapse; }
 .fields td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .fields .src { color: var(--muted); font-size: 0.85rem; }
+.fields tr.sec td { background: var(--line); font-weight: 700; padding-top: 10px; }
+.fields tr.skip td, .fields tr.auto td { color: var(--muted); font-size: 0.92rem; }
+.fields tr.fill td:first-child, .fields tr.mark td:first-child { border-inline-start: 3px solid var(--brand); padding-inline-start: 8px; }
 .copy { font: inherit; font-size: 0.85rem; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; padding: 2px 10px; cursor: pointer; }
 .stuck { position: fixed; bottom: 16px; left: 16px; z-index: 5; font-size: 0.9rem; }
 footer { margin-top: 40px; color: var(--muted); font-size: 0.85rem; }
