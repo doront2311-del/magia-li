@@ -37,11 +37,26 @@ test('שערוך 2020 מכויל: 3,802 ₪ ב-3.11.2026', () => {
 test('מדריך 1301 למקרה 2020: 158, 194, 042', () => {
   const r = computeYear(2020, case2020, new Date('2026-11-03'));
   const g = buildGuide(2020, case2020, r);
-  const inc = g.tabs.find((t) => t.title === 'פירוט הכנסות').fields;
-  const v = (f) => inc.find((x) => x.field === f)?.value;
+  const inc = g.tabs.find((t) => t.title.startsWith('פירוט הכנסות')).fields;
+  const v = (f) => inc.find((x) => x.kind === 'fill' && x.field.includes(`${f}:`))?.value;
   assert.equal(v('158'), (26_909).toLocaleString('he-IL'));
   assert.equal(v('194'), (43_708).toLocaleString('he-IL'));
   assert.equal(v('042'), (9_089).toLocaleString('he-IL'));
+});
+
+test('מדריך 1301: כל לשונית מפרטת גם את מה שלא ממלאים, עם סיבה', () => {
+  const g = buildGuide(2020, case2020, computeYear(2020, case2020, new Date('2026-11-03')));
+  for (const title of ['פרטים אישיים', 'פרטים כלליים']) {
+    const t = g.tabs.find((x) => x.title === title);
+    assert.ok(t.fields.some((f) => f.kind === 'skip'));
+    assert.ok(t.fields.every((f) => f.kind === 'section' || f.source));
+  }
+  const gen = g.tabs.find((x) => x.title === 'פרטים כלליים').fields;
+  assert.ok(gen.some((f) => /1213/.test(f.field) && f.value === 'בוחרים "לא"'));
+  assert.ok(gen.some((f) => /1345/.test(f.field) && f.value === 'בוחרים "לא"'));
+  const inc = g.tabs.find((t) => t.title.startsWith('פירוט הכנסות')).fields;
+  assert.ok(inc.some((f) => f.kind === 'section' && f.field.startsWith('יג.')));
+  assert.ok(inc.some((f) => /^13–31/.test(f.field) && f.kind === 'skip'));
 });
 
 test('פרטי ילדים חסרים: הערכה חלקית בלי הנקודות, לא חסימה', () => {
