@@ -94,8 +94,8 @@ function renderMe(ctx) {
     ${q.choice('me.gender', 'מין', [['m', 'גבר'], ['f', 'אישה']], 'אישה מקבלת חצי נקודת זיכוי נוספת.')}
     ${q.yn('me.hasKids', `היו לך ילדים מתחת לגיל 19 ${selText()}?`, 'כולל ילד שנולד באותה שנה. ילדים מזכים בנקודות זיכוי לפי הגיל שלהם בכל שנה.')}`;
   if (get('me.hasKids') === 'yes') html += `<div class="sub">${q.text('me.kidsBirthYears', 'שנות הלידה של הילדים', 'מופרדות בפסיק, למשל: 2022, 2025')}</div>`;
-  html += q.yn('me.degree', 'סיימת תואר אקדמי או תעודת מקצוע?', 'על סיום תואר מגיעה נקודת זיכוי לשנה אחת. מספיק לציין שנה.');
-  if (get('me.degree') === 'yes') html += `<div class="sub">${q.num('me.degreeYear', 'באיזו שנה סיימת?', 'השנה שבה קיבלת זכאות לתואר', { min: 1960, max: 2030 })}</div>`;
+  html += q.yn('me.degree', 'סיימת אי פעם תואר אקדמי או תעודת מקצוע? (בכל שנה, לא רק בשנים שבחרת)', 'בשאלה הבאה נשאל באיזו שנה. נקודת הזיכוי ניתנת רק בשנה שאחרי הסיום, אז האפליקציה תבדוק לבד אם היא נוגעת לשנים שבחרת.');
+  if (get('me.degree') === 'yes') html += `<div class="sub">${q.num('me.degreeYear', 'באיזו שנה סיימת את התואר או את הלימודים לתעודה?', 'השנה שבה קיבלת זכאות לתואר (כתוב באישור הזכאות מהמוסד)', { min: 1960, max: 2030 })}</div>`;
   html += q.yn('me.served', 'שירתת בשירות צבאי סדיר (חובה) או בשירות לאומי?', 'הכוונה לשירות הסדיר, לא למילואים. חיילים משוחררים מקבלים נקודות זיכוי ל-3 שנים אחרי השחרור. על מילואים נשאל בהמשך, בתוך כל שנה.');
   if (get('me.served') === 'yes') {
     html += `<div class="sub">${q.choice('me.serviceType', 'איזה שירות?', [['army', 'צבאי'], ['national', 'שירות לאומי / אזרחי']])}
@@ -129,17 +129,21 @@ const kidsYears = () => String(get('me.kidsBirthYears') || '').split(/[,\s]+/).m
 const TAX_LOGIN = 'https://secapp.taxes.gov.il/logon/LogonPoint/tmindex.html';
 const TAX_REGISTER = 'https://secapp.taxes.gov.il/srRishum/main/openPage';
 const BTL_LOGIN = 'https://ps.btl.gov.il/';
-const HOWTO_SUMMARY = `<details class="howto"><summary>איך מורידים את "ריכוז נתוני שכר מכלל המעסיקים" ואת טופסי ה-106</summary><ol>
-  <li>נכנסים לאזור האישי של רשות המסים בלינק הזה: <a href="${TAX_LOGIN}" target="_blank" rel="noopener">כניסה לאזור האישי ←</a><br><span class="small muted">לא דרך החיפוש באתר gov.il. החיפוש שם לא מוצא את הטפסים.</span></li>
-  <li>מזדהים: תעודת זהות, קוד משתמש וקוד חד-פעמי לטלפון. אין קוד משתמש? <a href="${TAX_REGISTER}" target="_blank" rel="noopener">רישום חד-פעמי</a> (צריך כרטיס אשראי ותאריך הנפקה של תעודת הזהות).</li>
-  <li>בעמוד הראשי בוחרים "טפסי 106", ואז את השנה.</li>
-  <li>מורידים את "ריכוז נתוני שכר מכלל המעסיקים" (PDF). זו הרשימה הרשמית של כל מי ששילם לך משכורת באותה שנה.</li>
-  <li>באותו מסך, ליד כל מעסיק, מורידים את טופס ה-106 שלו (נספח ב'). את כל הקבצים מעלים כאן ביחד.</li></ol></details>`;
-const HOWTO_BTL = `<details class="howto"><summary>איך מורידים את המסמכים מביטוח לאומי</summary><ol>
-  <li>נכנסים <a href="${BTL_LOGIN}" target="_blank" rel="noopener">לאזור האישי של ביטוח לאומי ←</a> ובוחרים "אישורים".</li>
-  <li><b>אישור תשלומים שנתי</b>: בוחרים את השנה ומורידים. כאן רואים אם קיבלת אבטלה, דמי לידה או דמי פגיעה. מעלים אותו גם אם לא קיבלת כלום, כדי שנדע בוודאות.</li>
-  <li>אם באישור יש תשלום: מורידים גם את "אישור שנתי למס הכנסה" של אותו תשלום. רק בו כתוב כמה מס נוכה.</li>
-  <li>מילואים לא מופיעים באישור התשלומים השנתי. אם עשית מילואים ושולם לך ישירות מביטוח לאומי, מורידים "אישור שנתי למס הכנסה על תשלום תגמולי מילואים".</li></ol></details>`;
+const HOWTO_LOGIN = `<li><b>כניסה:</b> <a class="btn small-btn" href="${TAX_LOGIN}" target="_blank" rel="noopener">פתיחת האזור האישי ברשות המסים ←</a><br><span class="small muted">רק דרך הכפתור הזה. החיפוש באתר gov.il לא מוצא את הטפסים.</span></li>
+  <li><b>הזדהות:</b> תעודת זהות, קוד משתמש וקוד חד-פעמי לטלפון. אין לך קוד משתמש? <a href="${TAX_REGISTER}" target="_blank" rel="noopener">רישום חד-פעמי</a>.
+    <div class="notice info small">ברישום מבקשים לבחור אמצעי זיהוי. <b>מספיק אחד בלבד</b>: הכי קל לבחור <b>"כרטיס אשראי"</b> ולהשאיר את השאר ריקים.</div></li>`;
+const HOWTO_SUMMARY = `<details class="howto" open><summary>איך מורידים מרשות המסים</summary><ol>
+  ${HOWTO_LOGIN}
+  <li>בעמוד הראשי בוחרים <b>"טפסי 106"</b>, ואז את השנה.</li>
+  <li>מורידים <b>שני סוגי קבצים</b>:<br>
+    (א) <b>"ריכוז נתוני שכר מכלל המעסיקים"</b>: קובץ אחד, הרשימה של כל מי ששילם לך משכורת באותה שנה.<br>
+    (ב) <b>"טופס 106"</b>: אחד לכל מעסיק ברשימה.<br>
+    <span class="small muted">הטעות הנפוצה: להוריד רק את ה-106 ולשכוח את הריכוז. בלי הריכוז אין לנו דרך לדעת שלא חסר מעסיק.</span></li></ol></details>`;
+const HOWTO_BTL = `<details class="howto" open><summary>איך מורידים מביטוח לאומי</summary><ol>
+  <li><b>כניסה:</b> <a class="btn small-btn" href="${BTL_LOGIN}" target="_blank" rel="noopener">פתיחת האזור האישי בביטוח לאומי ←</a> ואז בתפריט <b>"אישורים"</b>.</li>
+  <li>תחת "אישורים" מורידים <b>"אישור תשלומים שנתי"</b> לשנה. מורידים אותו תמיד, גם אם לא קיבלת כלום.</li>
+  <li>באותו מקום מחפשים גם <b>"אישור שנתי למס הכנסה"</b> לשנה. אם הוא לא מופיע ברשימה, לא צריך אותו.</li>
+  <li>עשית מילואים ושולם לך ישירות מביטוח לאומי? מחפשים גם <b>"אישור שנתי למס הכנסה על תשלום תגמולי מילואים"</b>.</li></ol></details>`;
 const NAMING_TIP = `<div class="notice info small"><b>טיפ:</b> חלק מהאתרים שומרים קבצים בשם של מספרים ואותיות (למשל <bdi dir="ltr">a8f3k29.pdf</bdi>). כשמורידים, כדאי לתת לכל קובץ שם ברור עם השנה ומה יש בו, ולשמור את כל הקבצים של שנה בתיקייה אחת. למשל:
   <bdi>2021-ריכוז-נתוני-שכר.pdf</bdi>, <bdi>2021-106-שם-המעסיק.pdf</bdi>, <bdi>2021-ביטוח-לאומי-אישור-תשלומים-שנתי.pdf</bdi>. אחרי ההעלאה נציע שם לכל קובץ שזיהינו, ואפשר לשמור עותק בשם הזה.</div>`;
 const BTL_LABELS = { miluim: 'תגמולי מילואים', unemployment: 'דמי אבטלה', maternity: 'דמי לידה', injury: 'דמי פגיעה בעבודה' };
@@ -168,13 +172,32 @@ function docsState(base, year) {
   return { s, need, btl, complete: need.length === 0 };
 }
 
+// רשימת הסימון: מה צריך להוריד מכל אתר, ומה כבר הועלה. מתעדכנת לבד לפי הקבצים שהאפליקציה זיהתה.
+function checklist(base, year, who) {
+  const { s, btl } = docsState(base, year);
+  const docs = get(`${base}.docs`) || [];
+  const mark = (ok) => ok ? '<span class="ok">✓ הועלה</span>' : '<span class="todo">☐ עוד לא</span>';
+  const tax = [[`"ריכוז נתוני שכר מכלל המעסיקים" ${year}`, !!s.summary]];
+  if (s.summary) for (const e of s.expected) tax.push([`"טופס 106" של ${e.name}`, !s.missing.some((m) => m.taxFile === e.taxFile)]);
+  else tax.push([`"טופס 106" מכל מעסיק (אחרי שתעלה את הריכוז נראה כאן את כולם)`, docs.some((d) => d.type === '106')]);
+  const bl = [[`"אישור תשלומים שנתי" ${year}`, !!s.btlAnnual]];
+  for (const b of s.btlAnnual?.benefits || []) bl.push([`"אישור שנתי למס הכנסה" על ${BTL_LABELS[b.kind]}`, btl.some((x) => x.kind === b.kind && x.taxWithheld != null)]);
+  if (get(`${base}.miluimDirect`) === 'yes') bl.push(['"אישור שנתי למס הכנסה על תשלום תגמולי מילואים"', s.certs.some((c) => c.kind === 'miluim')]);
+  const rows = (list) => list.map(([n, ok]) => `<tr><td>${mark(ok)}</td><td><b>${esc(n)}</b></td></tr>`).join('');
+  return `<div class="card sub checklist"><b>מה צריך להוריד ${who === 'spouse' ? 'לבן/בת הזוג' : ''} לשנת ${year}</b>
+    <table class="files"><tr><td colspan="2" class="small muted">מרשות המסים (האזור האישי ← "טפסי 106")</td></tr>${rows(tax)}
+    <tr><td colspan="2" class="small muted">מביטוח לאומי (האזור האישי ← "אישורים")</td></tr>${rows(bl)}</table>
+    <div class="small muted">הרשימה מתעדכנת לבד אחרי שמעלים קבצים.</div></div>`;
+}
+
 function renderPersonDocs(q, base, who, year) {
   if (get(`${base}.mode`) === 'manual') return renderManualDocs(q, base, who, year);
   const pron = who === 'spouse' ? 'של בן/בת הזוג' : 'שלך';
   const docs = get(`${base}.docs`) || [];
   let html = `<h3>מסמכים ${pron} לשנת ${year}</h3>
     <p>מעלים את הקבצים, והאפליקציה ממלאת את המספרים לבד. הקבצים נקראים בתוך הדפדפן ולא יוצאים מהמחשב.</p>
-    <p class="small"><b>מה להעלות:</b> (1) ריכוז נתוני שכר מכלל המעסיקים, (2) טופס 106 מכל מעסיק שמופיע בריכוז, (3) אישור תשלומים שנתי מביטוח לאומי, ואישורי מס של ביטוח לאומי אם יש.</p>
+    <div class="notice info"><b>לפני שנכנסים לאתרים: עוברים על ההסבר כאן למטה.</b> יש בהם הכפתורים שמובילים בדיוק למקום הנכון באתרים, ואת השמות המדויקים של הקבצים.</div>
+    ${checklist(base, year, who)}
     ${HOWTO_SUMMARY}${HOWTO_BTL}${NAMING_TIP}
     ${q.yn(`${base}.miluimDirect`, `עשית${who === 'spouse' ? ' (בן/בת הזוג)' : ''} מילואים בשנת ${year} ושולם ${who === 'spouse' ? 'לו/לה' : 'לך'} ישירות מביטוח לאומי (לא דרך המשכורת)?`, 'אם התגמול הגיע עם המשכורת, הוא כבר בטופס 106. אם הוא נכנס לבנק מביטוח לאומי, צריך את האישור השנתי על תגמולי מילואים.')}
     <label class="drop"><input type="file" accept="application/pdf,.pdf" multiple data-upload="${base}" data-upyear="${year}">
@@ -205,13 +228,7 @@ function renderPersonDocs(q, base, who, year) {
   }
   if (need.length) html += `<div class="q${q.missCls(`${base}.docsOk`)}" data-q="${base}.docsOk"><div class="notice warn"><b>עוד חסר:</b><ul>${need.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
   q.req(`${base}.docsOk`);
-  if (complete) {
-    html += q.choice(`${base}.docsConfirmed`, 'המספרים בטבלה תואמים למה שכתוב בטפסים?', [['yes', 'כן, תואמים'], ['no', 'לא, משהו לא נכון']], 'כדאי להציץ בטופס ה-106 ולהשוות לפחות את ההכנסה (158/172) ואת המס (042).');
-    if (get(`${base}.docsConfirmed`) === 'no') {
-      q.req(`${base}.fixNeeded`); // לא ממשיכים עם מספרים שהמשתמש אמר שהם לא נכונים
-      html += `<div class="q${q.missCls(`${base}.fixNeeded`)}" data-q="${base}.fixNeeded"><div class="notice warn">אפשר לתקן את המספרים ידנית, ולספר לנו מה לא נקרא נכון (כפתור "נתקעתי כאן"). <button class="btn link" type="button" data-mode="${base}|manual">מעבר לעריכה ידנית, עם המספרים שמצאנו</button></div></div>`;
-    }
-  }
+  if (complete) html += `<div class="notice info small">✓ כל המסמכים לשנה הזו הועלו. אם משהו בטבלה נראה לך לא נכון: <button class="btn link" type="button" data-mode="${base}|manual">תיקון ידני של המספרים</button></div>`;
   html += `<p class="small"><button class="btn link" type="button" data-mode="${base}|manual">אין לי את הקבצים, אני רוצה להקליד ידנית</button></p>`;
   return html;
 }
@@ -455,7 +472,7 @@ function renderResults() {
   let html = `<h1>התוצאה</h1>`;
   if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ החזר צפוי ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}</div><div class="amount">${fmt(total)} ₪</div><div>ועוד כ-${fmt(totalIdx)} ₪ הצמדה וריבית (הערכה)</div></div>`;
   const forGuide = rs.filter(guideable);
-  if (forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. השנים במסמך: ${forGuide.map((r) => r.year).join(', ')}.${forGuide.some((r) => r.status !== 'refund') ? ' בשנה שלא חושבה, בודקים את התוצאה בכפתור "חישוב" באתר לפני שמשדרים.' : ''} אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
+  if (forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. השנים במסמך: ${forGuide.map((r) => r.year).join(', ')}.${forGuide.some((r) => r.status === 'blocked') ? ' בשנה שלא חושבה, בודקים את התוצאה בכפתור "חישוב" באתר לפני שמשדרים.' : ''}${forGuide.some((r) => ['zero', 'debt', 'cpa'].includes(r.status)) ? ' גם שנה שלא יוצא בה החזר נמצאת במסמך, כדי שתוכל להחליט בעצמך.' : ''} אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
   if (!forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך מסביר שלב-אחר-שלב מה לכתוב בכל שדה באתר של רשות המסים. הוא נוצר לכל שנה שכל המסמכים שלה הועלו. ${rs.some((r) => r.status === 'blocked') ? 'בשנים שסומנו "עוד אי אפשר לחשב" חסרים מסמכים: ראו "מה עוד חסר" בשלב "שנים ומסמכים".</p><button class="btn secondary" type="button" data-go="years">להשלמת המסמכים</button>' : 'כרגע אין שנה שכדאי להגיש לה.</p>'}</div>`;
   html += '<div class="row"><button class="btn secondary" type="button" data-go="years">חזרה לתיקון התשובות</button></div>';
   html += '<p class="muted small">החישוב לפי מה שמסרת. לפני כל הגשה תלחצו על "חישוב" באתר רשות המסים ותשוו למספרים כאן.</p>';
@@ -476,13 +493,19 @@ function renderResults() {
         <tr><td>מס שנוכה בפועל<div class="muted small">מכל טופסי ה-106 ואישורי ביטוח לאומי</div></td><td class="num">${fmt(L('withheld'))}</td></tr>
       </table>`;
       if (r.reasons?.length) html += `<p><b>למה?</b> ${r.reasons.join(' ')}</p>`;
+      if (L('settlementCredit')) {
+        const c = caseFor(r.year);
+        c.people.forEach((p) => { p.settlement = { ...p.settlement, livedMonths: 0, rate: 0, ceiling: 0, missing: null }; });
+        const alt = computeYear(r.year, c);
+        if (alt.balance != null) html += `<div class="notice warn"><b>התוצאה תלויה בהטבת היישוב (${fmt(L('settlementCredit'))} ₪).</b> בלי ההטבה: ${alt.balance >= 0 ? `החזר של ${fmt(alt.balance)} ₪` : `<b>חוב של ${fmt(-alt.balance)} ₪</b>`}. ההטבה מגיעה רק למי שגר ביישוב בפועל (שם ישן, שם מרכז החיים), לא למי שרק רשום שם. רשות המסים בודקת את זה, ואם לא גרת שם, ענה "לא" בשאלה על היישוב.</div>`;
+      }
     }
     if (rec) html += `<p>${rec}</p>`;
     if (r.stops?.length) html += `<div class="notice warn">${r.stops.join('<br>')}</div>`;
     if (r.status === 'blocked') html += `<div class="notice warn">${r.blocks.map(esc).join('<br>')}</div><p class="small muted">כשחסר מסמך, אפשר להשלים אותו ולחזור. כשהכלל עוד לא אומת אצלנו, נעדכן את האפליקציה בקרוב. לא נחשב שום דבר שלא בדקנו מול מקור רשמי.</p>`;
     if (r.status === 'out') html += `<div class="notice warn">${esc(r.blocks[0])}</div>`;
     if (r.status !== 'refund') html += `<button class="btn link" type="button" data-edit="${r.year}">תיקון התשובות ל-${r.year}</button>`;
-    if (guideable(r)) html += `<p class="small muted">מועד אחרון להגשה: ${deadline(r.year)}</p><button class="btn${r.status === 'refund' ? '' : ' secondary'}" data-guide="${r.year}" type="button">${r.status === 'refund' ? `מדריך הגשה ל-${r.year}` : `מדריך מילוי ל-${r.year} (בלי תוצאה)`}</button>`;
+    if (guideable(r)) html += `<p class="small muted">מועד אחרון להגשה: ${deadline(r.year)}</p><button class="btn${r.status === 'refund' ? '' : ' secondary'}" data-guide="${r.year}" type="button">${r.status === 'refund' ? `מדריך הגשה ל-${r.year}` : r.status === 'blocked' ? `מדריך מילוי ל-${r.year} (בלי תוצאה)` : `מדריך מילוי ל-${r.year}, אם בכל זאת תרצה להגיש`}</button>`;
     html += '</div>';
   }
   return html;
@@ -496,11 +519,11 @@ function docsCompleteFor(year) {
   return c.people.every((p) => get(`years.${year}.${p.role}.mode`) === 'manual' || get(`years.${year}.${p.role}.docsOk`) === 'yes')
     && !resultFor(year).blocks.some((b) => /חסר|מסמך|אישור/.test(b));
 }
-const guideable = (r) => r.status === 'refund' || (r.status === 'blocked' && docsCompleteFor(r.year));
+const guideable = (r) => ['refund', 'zero', 'debt', 'cpa'].includes(r.status) || (r.status === 'blocked' && docsCompleteFor(r.year));
 
 function guideTabs(year) {
   const r = resultFor(year);
-  const g = buildGuide(year, caseFor(year), r.status === 'refund' ? r : null);
+  const g = buildGuide(year, caseFor(year), r.balance != null && r.status !== 'blocked' ? r : null);
   let html = '';
   g.tabs.forEach((t, i) => {
     html += `<div class="card"><h3 style="margin-top:0">${i + 1}. ${t.title}</h3>`;
@@ -520,7 +543,8 @@ function renderGuide() {
   const years = one ? [one] : sel.filter((y) => guideable(resultFor(y)));
   const all = years.map((y) => resultFor(y));
   const rs = all.filter((r) => r.status === 'refund');
-  const unknown = all.filter((r) => r.status !== 'refund');
+  const unknown = all.filter((r) => r.status === 'blocked');
+  const other = all.filter((r) => !['refund', 'blocked'].includes(r.status));
   const total = rs.reduce((t, r) => t + r.balance, 0);
   const today = new Date().toLocaleDateString('he-IL');
   let html = `<div class="row noprint"><button class="btn" type="button" id="printBtn">הורדה כ-PDF / הדפסה</button><button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>
@@ -528,9 +552,10 @@ function renderGuide() {
     <p class="muted small">הופק ב"מגיע לי" בתאריך ${today}, לפי התשובות והמסמכים שהעלית. זה לא ייעוץ מס. לפני כל הגשה לוחצים "חישוב" באתר רשות המסים ומשווים.</p>
     <div class="card"><h2 style="margin-top:0">סיכום</h2><table class="calc">
       ${rs.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}</div></td><td class="num">${fmt(r.balance)} ₪</td></tr>`).join('')}
+      ${other.map((r) => `<tr><td>${r.year}<div class="muted small">${r.balance < 0 ? 'לא מומלץ להגיש' : r.balance === 0 ? 'אין הפרש' : 'מומלץ רואה חשבון'}</div></td><td class="num">${r.balance < 0 ? `חוב ${fmt(-r.balance)} ₪` : `${fmt(r.balance)} ₪`}</td></tr>`).join('')}
       ${unknown.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}</div></td><td class="num">לא חושב</td></tr>`).join('')}
       ${rs.length > 1 ? `<tr><td><b>סה"כ</b><div class="muted small">ועוד כ-${fmt(rs.reduce((t, r) => t + (r.indexation || 0), 0))} ₪ הצמדה וריבית (הערכה)</div></td><td class="num"><b>${fmt(total)} ₪</b></td></tr>` : ''}
-    </table>${unknown.length ? `<div class="notice warn"><b>${unknown.map((r) => r.year).join(', ')}: את התוצאה עוד לא חישבנו</b>, כי חסר לנו כלל שעוד לא אימתנו (${esc([...new Set(unknown.flatMap((r) => r.blocks))].join('; '))}). השדות במדריך נכונים, כי הם מגיעים מהמסמכים ומהתשובות שלך. לפני השידור לוחצים "חישוב" באתר: <b>אם יוצא "מס ששולם ביתר", משדרים. אם יוצאת "יתרת חוב", לא משדרים</b>, כי בקשת החזר לא מחייבת להגיש, והגשה הייתה יוצרת חוב.</div>` : ''}</div>
+    </table>${unknown.length ? `<div class="notice warn"><b>${unknown.map((r) => r.year).join(', ')}: את התוצאה עוד לא חישבנו</b>, כי חסר לנו כלל שעוד לא אימתנו (${esc([...new Set(unknown.flatMap((r) => r.blocks))].join('; '))}). השדות במדריך נכונים, כי הם מגיעים מהמסמכים ומהתשובות שלך. לפני השידור לוחצים "חישוב" באתר: <b>אם יוצא "מס ששולם ביתר", משדרים. אם יוצאת "יתרת חוב", לא משדרים</b>, כי בקשת החזר לא מחייבת להגיש, והגשה הייתה יוצרת חוב.</div>` : ''}${other.length ? `<div class="notice warn"><b>${other.map((r) => r.year).join(', ')}: לפי החישוב לא יוצא החזר.</b> המדריך כאן למקרה שבכל זאת תרצה להגיש. לפני השידור לוחצים "חישוב" באתר: <b>אם יוצאת "יתרת חוב", לא משדרים</b>, כי הגשה הייתה יוצרת דרישת תשלום.</div>` : ''}</div>
     <div class="card"><h2 style="margin-top:0">לפני שמתחילים</h2><ul>
       <li>כמה זמן: בערך 40 דקות רצופות לכל שנה. המערכת מנתקת אחרי זמן, אז לוחצים "שמירה" אחרי כל לשונית.</li>
       <li>כניסה: <a href="https://www.gov.il/he/service/itc135" target="_blank" rel="noopener">השירות "הגשת דו"ח שנתי / בקשה להחזר מס" באתר רשות המסים</a>. מזדהים עם תעודת זהות, קוד משתמש וקוד חד-פעמי.</li>
@@ -538,7 +563,7 @@ function renderGuide() {
       <li>את הקבצים שצריך לצרף לכל שנה תמצאו בסוף הפרק של אותה שנה. אפשר להוריד אותם מהאפליקציה בשם ברור (בשלב "שנים ומסמכים").</li></ul></div>`;
   for (const y of years) {
     const ry = resultFor(y);
-    html += `<section class="guide-year"><h2>שנת ${y}: ${ry.status === 'refund' ? `${fmt(ry.balance)} ₪` : 'התוצאה לא חושבה, בודקים ב"חישוב" באתר'}</h2>${guideTabs(y).html}</section>`;
+    html += `<section class="guide-year"><h2>שנת ${y}: ${ry.status === 'refund' ? `${fmt(ry.balance)} ₪` : ry.status === 'blocked' ? 'התוצאה לא חושבה, בודקים ב"חישוב" באתר' : ry.balance < 0 ? `חוב ${fmt(-ry.balance)} ₪, לא מומלץ להגיש` : `${fmt(ry.balance)} ₪`}</h2>${guideTabs(y).html}</section>`;
   }
   html += `<section class="guide-year"><h2>אחרי ההגשה</h2>${afterBody()}</section>`;
   html += '<div class="row noprint"><button class="btn" type="button" data-go="after">הגשתי, מה עכשיו?</button> <button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>';
