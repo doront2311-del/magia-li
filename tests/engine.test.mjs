@@ -91,3 +91,57 @@ test('טווחי סכומים לאנליטיקס', () => {
   assert.equal(amountBucket(-10), 'debt');
   assert.equal(amountBucket(0), '0');
 });
+
+const person = (over = {}) => ({ role: 'self', gender: 'm', flags: {}, credits: {}, settlement: {}, btl: [],
+  employers: [{ name: 'מעסיק', income: 180_000, taxWithheld: 30_000, pensionDeposit: 0, insuredIncome: 180_000 }], ...over });
+
+test('חייל משוחרר: שירות מלא כל השנה = 2 נקודות נוספות; 3 חודשים = חצי נקודה', () => {
+  const full = computeYear(2022, { people: [person({ flags: { dischargedSoldier: { level: 'full', months: 12 } } })] });
+  assert.equal(full.results[0].lines.points, 4.25);
+  const part = computeYear(2022, { people: [person({ flags: { dischargedSoldier: { level: 'full', months: 3 } } })] });
+  assert.equal(part.results[0].lines.points, 2.75);
+  const one = computeYear(2022, { people: [person({ flags: { dischargedSoldier: { level: 'partial', months: 12 } } })] });
+  assert.equal(one.results[0].lines.points, 3.25);
+});
+
+test('פנסיה 2024 לפי הדוגמה של כל זכות: 15,000 ₪ בחודש, 6% הפקדה = זיכוי 2,852 ₪', () => {
+  const p = person();
+  p.employers[0].pensionDeposit = 10_800;
+  const r = computeYear(2024, { people: [p] });
+  // 2024: המדרגות עוד לא אומתו, אבל שורת הזיכוי מחושבת בכל זאת
+  assert.equal(r.results[0].lines.pensionCredit, 2_852);
+});
+
+test('פנסיה מתחת לתקרה: 35% מכל ההפקדה', () => {
+  const p = person();
+  p.employers[0] = { name: 'מעסיק', income: 60_000, taxWithheld: 5_000, pensionDeposit: 3_600, insuredIncome: 60_000 };
+  assert.equal(computeYear(2022, { people: [p] }).results[0].lines.pensionCredit, 1_260);
+});
+
+test('פנסיה 2021: התקרה ממקור אחד בלבד עוצרת את השנה', () => {
+  const p = person();
+  p.employers[0].pensionDeposit = 5_000;
+  const r = computeYear(2021, { people: [p] });
+  assert.equal(r.status, 'blocked');
+  assert.match(r.blocks.join(), /תקרת ההכנסה המזכה/);
+});
+
+test('יישוב מזכה: 12% עד 196,080, 6 חודשים', () => {
+  const p = person({ settlement: { livedMonths: 6, rate: 12, ceiling: 196_080 } });
+  const r = computeYear(2022, { people: [p] });
+  assert.equal(r.results[0].lines.settlementCredit, Math.round(0.12 * 98_040));
+});
+
+test('יישוב מזכה בלי טבלה לשנה = עצירה עם הסבר', () => {
+  const p = person({ settlement: { livedMonths: 12, rate: 0, ceiling: 0, missing: 'אין טבלה' } });
+  assert.equal(computeYear(2022, { people: [p] }).status, 'blocked');
+});
+
+test('טבלת היישובים: שניר 12% בכל השנים, והתקרות תואמות את לוח העזר', async () => {
+  const { SETTLEMENTS } = await import('../site/js/settlements.js');
+  assert.deepEqual(SETTLEMENTS[2022]['שניר'], { rate: 12, ceiling: 196_080 });
+  assert.deepEqual(SETTLEMENTS[2023]['שניר'], { rate: 12, ceiling: 206_400 });
+  assert.deepEqual(SETTLEMENTS[2024]['שניר'], { rate: 12, ceiling: 213_240 });
+  assert.deepEqual(SETTLEMENTS[2025]['שניר'], { rate: 12, ceiling: 213_240 });
+  for (const y of [2022, 2023, 2024, 2025]) assert.ok(Object.keys(SETTLEMENTS[y]).length > 470);
+});

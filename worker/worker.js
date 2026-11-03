@@ -4,7 +4,7 @@
 // POST /event         – אירוע אחד (JSON)
 // GET  /stats         – סיכום למסך הניהול. דורש כותרת Authorization: Bearer <ADMIN_TOKEN>
 
-const EVENTS = new Set(['landing_view', 'flow_start', 'share_link', 'app_open', 'step', 'year_result', 'guide_open', 'filed', 'stuck', 'doc_read']);
+const EVENTS = new Set(['landing_view', 'flow_start', 'share_link', 'app_open', 'step', 'year_result', 'guide_open', 'filed', 'stuck', 'doc_read', 'guide_print']);
 const KEYS = ['step', 'status', 'bucket', 'device', 'screen'];
 
 const cors = (origin) => ({

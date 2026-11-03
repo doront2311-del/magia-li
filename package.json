@@ -5,6 +5,7 @@
   "description": "מגיע לי – אפליקציית החזרי מס לשכירים",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "start": "npx --yes serve@14.2.4 site"
+    "start": "npx --yes serve@14.2.4 site",
+    "build:settlements": "node scripts/build-settlements.mjs"
   }
 }
