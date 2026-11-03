@@ -36,6 +36,7 @@ $('url').value = store.get('admin.url'); $('token').value = store.get('admin.tok
 const FUNNEL = [['landing', 'נכנסו לדף הפתיחה'], ['app', 'פתחו את האשף'], ['me', 'סיימו סינון'], ['years', 'סיימו שאלות עליהם'], ['results', 'הגיעו לתוצאה'], ['guide', 'פתחו מדריך הגשה'], ['filed', 'סימנו שהגישו']];
 const STEP_HE = { screen: 'סינון', me: 'שאלות עליך', years: 'שנים ומסמכים', results: 'תוצאה', guide: 'מדריך', after: 'אחרי ההגשה' };
 const STATUS_HE = { refund: 'החזר', debt: 'חוב', zero: 'אפס', blocked: 'חסום (פרמטר/מסמך)', cpa: 'רו"ח', out: 'מחוץ להיקף' };
+const DOC_HE = { payrollSummary: 'ריכוז נתוני שכר', form106: 'טופס 106', btlAnnual: 'ב"ל שנתי', btlMiluim: 'ב"ל מילואים', btlTaxCert: 'ב"ל אישור מס', legacy106: 'קידוד ישן', scanned: 'סרוק', unknown: 'לא זוהה', error: 'שגיאה' };
 const BUCKETS = ['1-2k', '2k-5k', '5k-10k', '10k-20k', '20k+'];
 
 function bars(rows, total) {
@@ -62,6 +63,8 @@ function show(s) {
     <div class="card"><h2 style="margin-top:0">תוצאות לפי סוג</h2>${bars(s.statuses.map((r) => [STATUS_HE[r.status] || r.status, r.n]))}
       <p class="small muted">"חסום" = שנה שדורשת פרמטר שעוד לא אומת. זו רשימת העדיפויות לאימות.</p></div>
     <div class="card"><h2 style="margin-top:0">איפה נתקעים</h2>${s.stuck.length ? bars(s.stuck.map((r) => [STEP_HE[r.screen] || r.screen, r.n])) : '<p class="muted">עוד אין לחיצות על "נתקעתי כאן".</p>'}</div>
+    <div class="card"><h2 style="margin-top:0">קבצים שהועלו, לפי סוג</h2>${(s.docTypes || []).length ? bars(s.docTypes.map((r) => [DOC_HE[r.type] || r.type, r.n])) : '<p class="muted">עוד לא הועלו קבצים.</p>'}
+      <p class="small muted">"לא זוהה", "סרוק" ו"קידוד ישן" = קבצים שהאפליקציה לא הצליחה לקרוא. אם יש הרבה כאלה, צריך להוסיף תמיכה בפורמט.</p></div>
     <div class="card"><h2 style="margin-top:0">טלפון מול מחשב</h2>${bars(s.devices.map((r) => [r.device === 'phone' ? 'טלפון' : 'מחשב', r.visits]))}</div>
     <div class="card"><h2 style="margin-top:0">לפי יום</h2><table class="calc"><tr><td><b>יום</b></td><td><b>נכנסו</b></td><td><b>התחילו</b></td><td><b>הגישו</b></td></tr>
       ${s.daily.map((d) => `<tr><td>${d.day}</td><td>${d.landing}</td><td>${d.started}</td><td>${d.filed}</td></tr>`).join('')}</table></div>
@@ -86,6 +89,7 @@ $('demo').addEventListener('click', () => show({
   buckets: [{ bucket: '1-2k', n: 12 }, { bucket: '2k-5k', n: 19 }, { bucket: '5k-10k', n: 14 }, { bucket: '10k-20k', n: 5 }, { bucket: '20k+', n: 1 }],
   statuses: [{ status: 'refund', n: 51 }, { status: 'debt', n: 17 }, { status: 'blocked', n: 40 }, { status: 'zero', n: 22 }, { status: 'out', n: 6 }],
   stuck: [{ screen: 'years', n: 9 }, { screen: 'me', n: 2 }],
+  docTypes: [{ type: 'form106', n: 70 }, { type: 'payrollSummary', n: 40 }, { type: 'btlAnnual', n: 33 }, { type: 'unknown', n: 6 }, { type: 'scanned', n: 3 }],
   devices: [{ device: 'phone', visits: 190 }, { device: 'desktop', visits: 80 }],
   daily: [{ day: '2026-11-05', landing: 120, started: 50, filed: 9 }, { day: '2026-11-04', landing: 120, started: 46, filed: 9 }],
 }));

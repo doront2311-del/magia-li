@@ -5,6 +5,8 @@ import { computeYear, amountBucket } from './engine.js';
 import { buildGuide } from './guide.js';
 import { openYears, deadline } from './params.js';
 import { track, device } from './analytics.js';
+import { parseDocument, summarizeDocs, DOC_TYPES } from './docparse.js';
+import { pdfLines } from './pdftext.js';
 
 const STORE = 'magia-li-v1';
 const STEPS = ['screen', 'me', 'years', 'results', 'guide', 'after'];
@@ -33,6 +35,8 @@ function mk(ctx) {
   const miss = (p) => ctx.showMissing && !answered(get(p)) ? ' missing' : '';
   const help = (h) => (h ? `<div class="help">${h}</div>` : '');
   return {
+    req(path) { ctx.req.push(path); },
+    missCls: miss,
     choice(path, label, options, h) {
       ctx.req.push(path);
       const v = get(path);
@@ -115,11 +119,100 @@ function selText() {
 }
 const kidsYears = () => String(get('me.kidsBirthYears') || '').split(/[,\s]+/).map(Number).filter((n) => n > 1900);
 
+// ---------- מסמכים: העלאה וקריאה אוטומטית בדפדפן ----------
+const TAX_LOGIN = 'https://secapp.taxes.gov.il/logon/LogonPoint/tmindex.html';
+const TAX_REGISTER = 'https://secapp.taxes.gov.il/srRishum/main/openPage';
+const BTL_LOGIN = 'https://ps.btl.gov.il/';
+const HOWTO_SUMMARY = `<details class="howto"><summary>איך מורידים את "ריכוז נתוני שכר מכלל המעסיקים" ואת טופסי ה-106</summary><ol>
+  <li>נכנסים לאזור האישי של רשות המסים בלינק הזה: <a href="${TAX_LOGIN}" target="_blank" rel="noopener">כניסה לאזור האישי ←</a><br><span class="small muted">לא דרך החיפוש באתר gov.il. החיפוש שם לא מוצא את הטפסים.</span></li>
+  <li>מזדהים: תעודת זהות, קוד משתמש וקוד חד-פעמי לטלפון. אין קוד משתמש? <a href="${TAX_REGISTER}" target="_blank" rel="noopener">רישום חד-פעמי</a> (צריך כרטיס אשראי ותאריך הנפקה של תעודת הזהות).</li>
+  <li>בעמוד הראשי בוחרים "טפסי 106", ואז את השנה.</li>
+  <li>מורידים את "ריכוז נתוני שכר מכלל המעסיקים" (PDF). זו הרשימה הרשמית של כל מי ששילם לך משכורת באותה שנה.</li>
+  <li>באותו מסך, ליד כל מעסיק, מורידים את טופס ה-106 שלו (נספח ב'). את כל הקבצים מעלים כאן ביחד.</li></ol></details>`;
+const HOWTO_BTL = `<details class="howto"><summary>איך מורידים את המסמכים מביטוח לאומי</summary><ol>
+  <li>נכנסים <a href="${BTL_LOGIN}" target="_blank" rel="noopener">לאזור האישי של ביטוח לאומי ←</a> ובוחרים "אישורים".</li>
+  <li><b>אישור תשלומים שנתי</b>: בוחרים את השנה ומורידים. כאן רואים אם קיבלת אבטלה, דמי לידה או דמי פגיעה. מעלים אותו גם אם לא קיבלת כלום, כדי שנדע בוודאות.</li>
+  <li>אם באישור יש תשלום: מורידים גם את "אישור שנתי למס הכנסה" של אותו תשלום. רק בו כתוב כמה מס נוכה.</li>
+  <li>מילואים לא מופיעים באישור התשלומים השנתי. אם עשית מילואים ושולם לך ישירות מביטוח לאומי, מורידים "אישור שנתי למס הכנסה על תשלום תגמולי מילואים".</li></ol></details>`;
+const BTL_LABELS = { miluim: 'תגמולי מילואים', unemployment: 'דמי אבטלה', maternity: 'דמי לידה', injury: 'דמי פגיעה בעבודה' };
+
+// מה המסמכים אומרים, ומה עוד חסר. משמש גם את התצוגה וגם את החישוב.
+function docsState(base, year) {
+  const docs = get(`${base}.docs`) || [];
+  const s = summarizeDocs(docs, year);
+  const need = [];
+  if (!s.summary) need.push('ריכוז נתוני שכר מכלל המעסיקים (רשות המסים)');
+  for (const e of s.missing) need.push(`טופס 106 של ${e.name} (תיק ניכויים ${e.taxFile})`);
+  if (!s.btlAnnual) need.push('אישור תשלומים שנתי (ביטוח לאומי)');
+  const btl = [];
+  for (const b of s.btlAnnual?.benefits || []) {
+    const cert = s.certs.find((c) => c.kind === b.kind);
+    if (!cert) need.push(`אישור שנתי למס הכנסה על ${BTL_LABELS[b.kind]} (ביטוח לאומי)`);
+    btl.push({ kind: b.kind, label: BTL_LABELS[b.kind], gross: cert?.gross ?? b.gross, taxWithheld: cert ? cert.tax : null, source: cert?.fileName || s.btlAnnual.fileName });
+  }
+  const miluim = s.certs.find((c) => c.kind === 'miluim');
+  if (miluim) btl.push({ kind: 'miluim', label: BTL_LABELS.miluim, gross: miluim.gross, taxWithheld: miluim.tax, source: miluim.fileName });
+  else if (get(`${base}.miluimDirect`) === 'yes') need.push('אישור שנתי למס הכנסה על תשלום תגמולי מילואים (ביטוח לאומי)');
+  for (const c of s.certs) if (c.kind !== 'miluim' && !(s.btlAnnual?.benefits || []).some((b) => b.kind === c.kind)) {
+    btl.push({ kind: c.kind || 'other', label: BTL_LABELS[c.kind] || 'תשלום מביטוח לאומי', gross: c.gross, taxWithheld: c.tax, source: c.fileName });
+  }
+  for (const e of s.employers) if (e.income == null) need.push(`לא הצלחנו לקרוא את ההכנסה בקובץ "${e.source}". נסו את טופס ה-106 מרשות המסים (נספח ב').`);
+  return { s, need, btl, complete: need.length === 0 };
+}
+
 function renderPersonDocs(q, base, who, year) {
+  if (get(`${base}.mode`) === 'manual') return renderManualDocs(q, base, who, year);
   const pron = who === 'spouse' ? 'של בן/בת הזוג' : 'שלך';
+  const docs = get(`${base}.docs`) || [];
   let html = `<h3>מסמכים ${pron} לשנת ${year}</h3>
+    <p>מעלים את הקבצים, והאפליקציה ממלאת את המספרים לבד. הקבצים נקראים בתוך הדפדפן ולא יוצאים מהמחשב.</p>
+    <p class="small"><b>מה להעלות:</b> (1) ריכוז נתוני שכר מכלל המעסיקים, (2) טופס 106 מכל מעסיק שמופיע בריכוז, (3) אישור תשלומים שנתי מביטוח לאומי, ואישורי מס של ביטוח לאומי אם יש.</p>
+    ${HOWTO_SUMMARY}${HOWTO_BTL}
+    ${q.yn(`${base}.miluimDirect`, `עשית${who === 'spouse' ? ' (בן/בת הזוג)' : ''} מילואים בשנת ${year} ושולם ${who === 'spouse' ? 'לו/לה' : 'לך'} ישירות מביטוח לאומי (לא דרך המשכורת)?`, 'אם התגמול הגיע עם המשכורת, הוא כבר בטופס 106. אם הוא נכנס לבנק מביטוח לאומי, צריך את האישור השנתי על תגמולי מילואים.')}
+    <label class="drop"><input type="file" accept="application/pdf,.pdf" multiple data-upload="${base}" data-upyear="${year}">
+      <b>בחירת קבצי PDF</b><span class="small muted">אפשר לבחור כמה קבצים ביחד, ולהוסיף עוד אחר כך</span></label>`;
+  if (state.ui.reading === base) html += '<div class="notice info">קורא את הקבצים…</div>';
+  if (docs.length) {
+    html += `<table class="files">${docs.map((d, i) => {
+      const ok = !['unknown', 'scanned', 'legacy106', 'error'].includes(d.type) && (!d.year || d.year === year);
+      const what = d.type === 'error' ? 'לא הצלחנו לפתוח את הקובץ' : (DOC_TYPES[d.type] || d.type) + (d.year ? `, ${d.year}` : '') + (d.employer?.name ? `, ${d.employer.name}` : '');
+      return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div></td><td><button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
+    }).join('')}</table>`;
+  }
+  const { s, need, btl, complete } = docsState(base, year);
+  set(`${base}.docsOk`, complete ? 'yes' : '');
+  const bad = docs.filter((d) => ['unknown', 'scanned', 'legacy106', 'error'].includes(d.type));
+  if (bad.length) html += `<div class="notice warn">לא הצלחנו לקרוא: ${bad.map((d) => `"${esc(d.fileName)}"`).join(', ')}. טפסים סרוקים, או טפסים ישנים שהמעסיק שלח, לפעמים לא נקראים. במקומם מורידים את טופס ה-106 מהאזור האישי ברשות המסים (נספח ב'), כמו בהסבר למעלה.</div>`;
+  if (s.issues.length) html += `<div class="notice warn">${s.issues.map(esc).join('<br>')}</div>`;
+  if (s.employers.length || btl.length) {
+    html += `<table class="calc"><tr><td><b>מה מצאנו</b></td><td class="num"><b>הכנסה</b></td><td class="num"><b>מס שנוכה</b></td></tr>
+      ${s.employers.map((e) => `<tr><td>${esc(e.name)}<div class="small muted">מקור: <bdi>${esc(e.source)}</bdi>. הפקדה לפנסיה ${fmt(e.pensionDeposit)} ₪${e.settlementCode ? '. המעסיק נתן הנחת יישוב מזכה' : ''}</div></td><td class="num">${e.income == null ? '?' : fmt(e.income)}</td><td class="num">${fmt(e.taxWithheld)}</td></tr>`).join('')}
+      ${btl.map((b) => `<tr><td>ביטוח לאומי: ${esc(b.label)}<div class="small muted">מקור: <bdi>${esc(b.source)}</bdi></div></td><td class="num">${fmt(b.gross || 0)}</td><td class="num">${b.taxWithheld == null ? 'חסר אישור' : fmt(b.taxWithheld)}</td></tr>`).join('')}
+    </table>`;
+    if (s.summary?.fields?.income != null) html += `<p class="small muted">בריכוז נתוני השכר: הכנסה ${fmt(s.summary.fields.income)} ₪, מס ${fmt(s.summary.fields.taxWithheld || 0)} ₪.</p>`;
+  } else if (s.summary && !s.expected.length) {
+    html += '<div class="notice info">בריכוז נתוני השכר לא מופיע אף מעסיק בשנה הזו.</div>';
+  }
+  if (need.length) html += `<div class="q${q.missCls(`${base}.docsOk`)}" data-q="${base}.docsOk"><div class="notice warn"><b>עוד חסר:</b><ul>${need.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
+  q.req(`${base}.docsOk`);
+  if (complete) {
+    html += q.choice(`${base}.docsConfirmed`, 'המספרים בטבלה תואמים למה שכתוב בטפסים?', [['yes', 'כן, תואמים'], ['no', 'לא, משהו לא נכון']], 'כדאי להציץ בטופס ה-106 ולהשוות לפחות את ההכנסה (158/172) ואת המס (042).');
+    if (get(`${base}.docsConfirmed`) === 'no') {
+      q.req(`${base}.fixNeeded`); // לא ממשיכים עם מספרים שהמשתמש אמר שהם לא נכונים
+      html += `<div class="q${q.missCls(`${base}.fixNeeded`)}" data-q="${base}.fixNeeded"><div class="notice warn">אפשר לתקן את המספרים ידנית, ולספר לנו מה לא נקרא נכון (כפתור "נתקעתי כאן"). <button class="btn link" type="button" data-mode="${base}|manual">מעבר לעריכה ידנית, עם המספרים שמצאנו</button></div></div>`;
+    }
+  }
+  html += `<p class="small"><button class="btn link" type="button" data-mode="${base}|manual">אין לי את הקבצים, אני רוצה להקליד ידנית</button></p>`;
+  return html;
+}
+
+function renderManualDocs(q, base, who, year) {
+  const pron = who === 'spouse' ? 'של בן/בת הזוג' : 'שלך';
+  let html = `<h3>מסמכים ${pron} לשנת ${year}: הקלדה ידנית</h3>
+    <p><button class="btn link" type="button" data-mode="${base}|upload">חזרה להעלאת קבצים (מומלץ)</button></p>
+    ${HOWTO_SUMMARY}
     ${q.num(`${base}.employersCount`, `כמה מעסיקים מופיעים ב"ריכוז נתוני שכר מכלל המעסיקים" ${pron} לשנת ${year}?`,
-      'מורידים מהאזור האישי ברשות המסים. זו הרשימה הרשמית, וכל מעסיק שמופיע בה צריך טופס 106. אם לא עבדת בכלל בשנה הזו, כתבו 0.', { max: 12 })}`;
+      'אם לא עבדת בכלל בשנה הזו, כתבו 0.', { max: 12 })}`;
   const n = Math.min(Number(get(`${base}.employersCount`)) || 0, 12);
   for (let i = 0; i < n; i++) {
     const e = `${base}.employers.${i}`;
@@ -227,7 +320,12 @@ function renderYears(ctx) {
 }
 
 // ---------- from answers to engine input ----------
-function personFrom(base, gender, flags) {
+function personFrom(base, gender, flags, year) {
+  if (get(`${base}.mode`) !== 'manual') {
+    const { s, btl } = docsState(base, year);
+    const employers = s.employers.map((e) => ({ name: e.name, income: e.income, taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, settlementCode: e.settlementCode }));
+    return { gender, flags, employers, btl: btl.map((b) => ({ label: b.label, gross: b.gross, taxWithheld: b.taxWithheld })), credits: {}, settlement: { employerGave: employers.reduce((t, e) => t + (e.settlementCode || 0), 0) } };
+  }
   const n = Number(get(`${base}.employersCount`)) || 0;
   const employers = [];
   for (let i = 0; i < n; i++) {
@@ -259,7 +357,7 @@ function caseFor(year) {
     alimony: y('alimony') === 'yes',
     spousePoints: couple && y('spouseIncome') === 'no' && y('spouseSpecial') === 'yes',
   };
-  const self = { role: 'self', ...personFrom(`years.${year}.self`, get('me.gender'), flags) };
+  const self = { role: 'self', ...personFrom(`years.${year}.self`, get('me.gender'), flags, year) };
   self.credits = {
     lifeInsurance: y('lifeIns') === 'yes' ? +y('lifeInsAmount') : 0,
     disabilityInsurance: y('disability') === 'yes' ? +y('disabilityAmount') : 0,
@@ -269,7 +367,7 @@ function caseFor(year) {
   self.settlement.livedMonths = y('settlement') === 'yes' ? +y('settlementMonths') : 0;
   const people = [self];
   if (couple && y('spouseIncome') === 'yes') {
-    const sp = { role: 'spouse', ...personFrom(`years.${year}.spouse`, y('spouseGender'), { kids }) };
+    const sp = { role: 'spouse', ...personFrom(`years.${year}.spouse`, y('spouseGender'), { kids }, year) };
     sp.settlement.livedMonths = self.settlement.livedMonths;
     people.push(sp);
   }
@@ -395,6 +493,34 @@ function render(showMissing = false) {
   if (focusPath) document.querySelector(`[data-path="${CSS.escape(focusPath)}"]`)?.focus();
 }
 
+// קריאת הקבצים בדפדפן. נשמרים רק סוג המסמך, השנה, המעסיק והמספרים. לא הטקסט, ולא מספר הזהות המלא.
+async function readFiles(base, files) {
+  if (!files.length) return;
+  state.ui.reading = base; render();
+  const docs = get(`${base}.docs`) || [];
+  for (const f of files) {
+    let d;
+    try { d = parseDocument(await pdfLines(f)); } catch { d = { type: 'error' }; }
+    d.fileName = f.name;
+    const i = docs.findIndex((x) => x.fileName === f.name);
+    if (i >= 0) docs[i] = d; else docs.push(d);
+    track('doc_read', { status: d.type });
+  }
+  set(`${base}.docs`, docs); set(`${base}.docsConfirmed`, '');
+  state.ui.reading = null; save(); render();
+}
+
+// מעבר להקלדה ידנית: מתחילים מהמספרים שנקראו מהקבצים, כדי לתקן ולא להקליד הכול מחדש.
+function prefillManual(base) {
+  const year = Number(base.split('.')[1]);
+  const { s, btl } = docsState(base, year);
+  if (!s.employers.length && !btl.length) return;
+  set(`${base}.employersCount`, s.employers.length);
+  s.employers.forEach((e, i) => set(`${base}.employers.${i}`, { name: e.name, income: e.income ?? '', taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, settlementCode: e.settlementCode }));
+  set(`${base}.btlDirect`, btl.length ? 'yes' : 'no');
+  for (const b of btl) if (BTL_LABELS[b.kind]) set(`${base}.btl.${b.kind}`, { received: 'yes', gross: b.gross, hasCert: b.taxWithheld == null ? 'no' : 'yes', tax: b.taxWithheld ?? '' });
+}
+
 function go(step) {
   state.step = step; save();
   track('step', { step });
@@ -402,8 +528,9 @@ function go(step) {
   scrollTo(0, 0);
 }
 
-app.addEventListener('change', (ev) => {
+app.addEventListener('change', async (ev) => {
   const el = ev.target;
+  if (el.dataset.upload) return readFiles(el.dataset.upload, [...el.files]);
   if (el.dataset.years) {
     const y = Number(el.dataset.years);
     const sel = new Set(get('screen.selectedYears') || []);
@@ -419,6 +546,17 @@ app.addEventListener('change', (ev) => {
 app.addEventListener('click', async (ev) => {
   const t = ev.target.closest('button');
   if (!t) return;
+  if (t.dataset.rmdoc) {
+    const [base, i] = t.dataset.rmdoc.split('|');
+    const docs = get(`${base}.docs`) || [];
+    docs.splice(Number(i), 1);
+    set(`${base}.docs`, docs); set(`${base}.docsConfirmed`, ''); save(); render(); return;
+  }
+  if (t.dataset.mode) {
+    const [base, mode] = t.dataset.mode.split('|');
+    if (mode === 'manual' && get(`${base}.mode`) !== 'manual') prefillManual(base);
+    set(`${base}.mode`, mode); set(`${base}.docsConfirmed`, ''); save(); render(); return;
+  }
   if (t.dataset.year) { state.ui.year = Number(t.dataset.year); save(); render(); return; }
   if (t.dataset.nav === 'back') return go(STEPS[STEPS.indexOf(state.step) - 1]);
   if (t.dataset.nav === 'next') {
