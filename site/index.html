@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>מגיע לי – בדיקת החזר מס לשכירים</title>
+  <meta name="description" content="בודקים בחינם אם מגיע לכם החזר מס, ומקבלים מדריך מילוי מוכן לאתר רשות המסים. הכול נשאר במכשיר שלכם.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="wrap hero">
+  <div class="brand">מגיע לי</div>
+  <h1>אולי המדינה מחזיקה כסף שלך</h1>
+
+  <ul class="facts">
+    <li>בכל שנה מאות אלפי משפחות בישראל משלמות מס ביתר, בהיקף של <b>כמיליארד ₪</b>, ורובן לא מגישות בקשה לקבל אותו בחזרה. רק לשנים <span dir="ltr">2013–2019</span> המדינה חייבת לשכירים כ-3.6 מיליארד ₪.*</li>
+    <li>בממוצע מדובר ב<b>אלפי שקלים</b> לכל משפחה.</li>
+    <li>חברות להחזרי מס לוקחות בדרך כלל <b><span dir="ltr">15%–20%</span></b> מההחזר. זה מסתכם בעד אלפי שקלים, על תהליך שאפשר לעשות לבד.</li>
+    <li><b>75%</b> מהעובדים מעולם לא ביקשו החזר מס. מתוכם, 54% "לא מבינים בנושא", 20% חושבים שלא מגיע להם, ו-11% נמנעים בגלל הבירוקרטיה.**</li>
+    <li>עם האפליקציה הזו, התהליך לוקח <b><span dir="ltr">30–60</span> דקות</b>.</li>
+  </ul>
+
+  <h2>איך זה עובד</h2>
+  <ol class="steps">
+    <li><b>מורידים מסמכים</b> מהאזור האישי ברשות המסים ובביטוח לאומי. נסביר בדיוק איפה כל אחד.</li>
+    <li><b>עונים על שאלות קצרות</b> על מה שלא כתוב במסמכים: ילדים, תואר, שחרור מהצבא, ביטוחים.</li>
+    <li><b>רואים לכל שנה</b> אם מגיע החזר, כמה, ולמה. גם שנים שיוצאות בחוב מסומנות, כדי שלא תגישו אותן בטעות.</li>
+    <li><b>מגישים בעצמכם</b> באתר רשות המסים, עם רשימת שדות מוכנה להעתקה.</li>
+  </ol>
+
+  <h2>מה צריך להכין</h2>
+  <div class="card">
+    <ul>
+      <li>קוד משתמש לאזור האישי ברשות המסים ובביטוח לאומי (תעודת זהות + קוד לטלפון)</li>
+      <li>לכל שנה: <b>ריכוז נתוני שכר</b> וטופס <b>106</b> מכל מעסיק</li>
+      <li>אם קיבלתם מילואים, אבטלה או דמי לידה: אישורים שנתיים מביטוח לאומי</li>
+      <li>פרטי חשבון בנק, ואישור ניהול חשבון מאפליקציית הבנק</li>
+      <li>אם נשואים: את אותם מסמכים גם של בן/בת הזוג, כי הדו"ח משותף</li>
+    </ul>
+    <p class="muted small">אפשר לבדוק עד שש שנים אחורה. את שנת 2020 אפשר להגיש רק עד 31.12.2026.</p>
+  </div>
+
+  <div class="desktop-note" id="phoneNote" hidden>
+    <b>ממשיכים במחשב.</b> המילוי נוח יותר במסך גדול, כי מעתיקים מספרים ממסמכים. שלחו לעצמכם את הקישור:
+    <div class="row" style="margin-top:10px">
+      <button class="btn secondary" id="shareBtn" type="button">שליחת הקישור לעצמי</button>
+    </div>
+  </div>
+
+  <p style="margin-top:22px"><a class="btn block" href="app.html" id="startBtn">בדקו אם מגיע לכם החזר</a></p>
+
+  <div class="card small">
+    <b>פרטיות:</b> הכול רץ בדפדפן שלכם. אין הרשמה, ושום מסמך או מספר לא נשלח לשום מקום. אנחנו סופרים רק באופן אנונימי כמה אנשים התחילו וסיימו.
+    <br><b>לא ייעוץ:</b> האפליקציה מחשבת לפי מה שמסרתם. אתם מגישים בעצמכם ואחראים לנכונות ההצהרה. במקרים מורכבים נפנה אתכם לרואה חשבון.
+  </div>
+
+  <footer>
+    * מקור: דו"ח מבקר המדינה, 2021. ** מקור: סקר AllJobs, 2022.
+  </footer>
+</main>
+<script type="module">
+  import { track, device } from './js/analytics.js';
+  track('landing_view', { device: device() });
+  if (device() === 'phone') document.getElementById('phoneNote').hidden = false;
+  document.getElementById('startBtn').addEventListener('click', () => track('flow_start', { device: device() }));
+  document.getElementById('shareBtn').addEventListener('click', async () => {
+    const url = location.href.replace(/index\.html$/, '');
+    const text = 'מגיע לי – בדיקת החזר מס. להמשיך במחשב:';
+    if (navigator.share) { try { await navigator.share({ title: 'מגיע לי', text, url }); } catch {} }
+    else location.href = `https://wa.me/?text=${encodeURIComponent(`${text} ${url}`)}`;
+    track('share_link');
+  });
+</script>
+</body>
+</html>

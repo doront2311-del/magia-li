@@ -1,0 +1,10 @@
+{
+  "name": "i-deserve-it",
+  "private": true,
+  "type": "module",
+  "description": "מגיע לי – אפליקציית החזרי מס לשכירים",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "npx --yes serve@14.2.4 site"
+  }
+}

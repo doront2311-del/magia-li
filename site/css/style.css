@@ -1,0 +1,104 @@
+:root {
+  --bg: #f7f6f2;
+  --card: #ffffff;
+  --text: #1d2125;
+  --muted: #5d6670;
+  --line: #e2e0d8;
+  --brand: #0f766e;
+  --brand-ink: #ffffff;
+  --brand-soft: #e3f3f1;
+  --good: #15803d;
+  --good-soft: #e7f6ec;
+  --bad: #b42318;
+  --bad-soft: #fdecea;
+  --warn: #9a6700;
+  --warn-soft: #fff6db;
+  --radius: 14px;
+  --font: "Assistant", "Heebo", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a; --card: #1d2125; --text: #eceae4; --muted: #a3abb3; --line: #30363c;
+    --brand: #2dd4bf; --brand-ink: #0b1f1d; --brand-soft: #16302d;
+    --good: #4ade80; --good-soft: #15291c; --bad: #f87171; --bad-soft: #321a19;
+    --warn: #fbbf24; --warn-soft: #2f2716;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 17px; line-height: 1.6; }
+a { color: var(--brand); }
+.wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
+h1 { font-size: 2rem; line-height: 1.25; margin: 0.4em 0; }
+h2 { font-size: 1.35rem; margin: 1.6em 0 0.5em; }
+h3 { font-size: 1.1rem; margin: 1.2em 0 0.4em; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin: 14px 0; }
+.btn { display: inline-block; border: 0; border-radius: 999px; padding: 12px 22px; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; background: var(--brand); color: var(--brand-ink); }
+.btn.secondary { background: transparent; color: var(--brand); border: 1.5px solid var(--brand); }
+.btn.link { background: none; color: var(--muted); padding: 6px 0; font-weight: 400; text-decoration: underline; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.block { display: block; width: 100%; text-align: center; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.spacer { flex: 1; }
+
+/* landing */
+.hero { padding-top: 12px; }
+.brand { font-weight: 800; color: var(--brand); letter-spacing: 0.02em; }
+.facts { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.facts li { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+.facts b { color: var(--brand); }
+.steps { counter-reset: s; list-style: none; padding: 0; }
+.steps li { counter-increment: s; position: relative; padding: 4px 44px 10px 0; }
+.steps li::before { content: counter(s); position: absolute; right: 0; top: 2px; width: 30px; height: 30px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 800; display: grid; place-items: center; }
+.desktop-note { background: var(--warn-soft); border-radius: var(--radius); padding: 12px 16px; }
+
+/* wizard */
+.progress { display: flex; gap: 6px; margin: 8px 0 18px; }
+.progress span { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
+.progress span.on { background: var(--brand); }
+.q { margin: 14px 0; }
+.q > label, .q > .label { display: block; font-weight: 700; margin-bottom: 6px; }
+.q .help { color: var(--muted); font-size: 0.9rem; margin: -2px 0 8px; }
+.q.missing > label, .q.missing > .label { color: var(--bad); }
+.q.missing .choices, .q.missing input { outline: 2px solid var(--bad); outline-offset: 2px; border-radius: 8px; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choices label { border: 1.5px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer; background: var(--card); }
+.choices input { position: absolute; opacity: 0; pointer-events: none; }
+.choices label:has(input:checked) { border-color: var(--brand); background: var(--brand-soft); font-weight: 700; }
+input[type=number], input[type=text] { font: inherit; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); width: 100%; max-width: 260px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
+.year-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.year-tabs button { font: inherit; border: 1.5px solid var(--line); background: var(--card); color: var(--text); border-radius: 999px; padding: 4px 14px; cursor: pointer; }
+.year-tabs button.on { border-color: var(--brand); background: var(--brand-soft); font-weight: 700; }
+.year-tabs button.done::after { content: " ✓"; color: var(--good); }
+.sub { border-inline-start: 3px solid var(--brand-soft); padding-inline-start: 14px; }
+.notice { border-radius: 10px; padding: 10px 14px; margin: 10px 0; }
+.notice.warn { background: var(--warn-soft); }
+.notice.bad { background: var(--bad-soft); }
+.notice.good { background: var(--good-soft); }
+.notice.info { background: var(--brand-soft); }
+
+/* results */
+.result { border-inline-start: 6px solid var(--line); }
+.result.refund { border-color: var(--good); }
+.result.debt { border-color: var(--bad); }
+.result.blocked, .result.cpa, .result.out { border-color: var(--warn); }
+.amount { font-size: 1.9rem; font-weight: 800; }
+.refund .amount { color: var(--good); }
+.debt .amount { color: var(--bad); }
+table.calc { width: 100%; border-collapse: collapse; margin: 8px 0; }
+table.calc td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.calc td.num { text-align: left; white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 700; }
+.fields { width: 100%; border-collapse: collapse; }
+.fields td { padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.fields .src { color: var(--muted); font-size: 0.85rem; }
+.copy { font: inherit; font-size: 0.85rem; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; padding: 2px 10px; cursor: pointer; }
+.stuck { position: fixed; bottom: 16px; left: 16px; z-index: 5; font-size: 0.9rem; }
+footer { margin-top: 40px; color: var(--muted); font-size: 0.85rem; }
+
+@media (max-width: 520px) {
+  h1 { font-size: 1.6rem; }
+  .amount { font-size: 1.5rem; }
+}

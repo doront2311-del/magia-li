@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>מגיע לי – ניהול</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .kpi { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+    .kpi .v { font-size: 1.7rem; font-weight: 800; }
+    .bar { display: grid; grid-template-columns: 120px 1fr 90px; gap: 10px; align-items: center; margin: 6px 0; }
+    .bar .track { background: var(--line); border-radius: 6px; height: 14px; overflow: hidden; }
+    .bar .fill { background: var(--brand); height: 100%; }
+    .bar .n { text-align: left; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <div class="brand">מגיע לי · ניהול</div>
+  <h1>איך האפליקציה עובדת</h1>
+  <form class="card" id="cfg">
+    <div class="q"><label for="url">כתובת שרת האנליטיקס</label><input id="url" type="text" dir="ltr" placeholder="https://magia-li-analytics.xxx.workers.dev" style="max-width:100%"></div>
+    <div class="q"><label for="token">סיסמת ניהול (ADMIN_TOKEN)</label><input id="token" type="text" dir="ltr" autocomplete="off" style="max-width:100%"></div>
+    <div class="row"><button class="btn" type="submit">טעינה</button><button class="btn secondary" type="button" id="demo">נתוני דוגמה</button></div>
+    <p class="small muted">הפרטים נשמרים רק בדפדפן הזה. ההקמה של השרת מוסברת ב-worker/README.md.</p>
+  </form>
+  <div id="out"></div>
+</main>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const store = { get(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+$('url').value = store.get('admin.url'); $('token').value = store.get('admin.token');
+
+const FUNNEL = [['landing', 'נכנסו לדף הפתיחה'], ['app', 'פתחו את האשף'], ['me', 'סיימו סינון'], ['years', 'סיימו שאלות עליהם'], ['results', 'הגיעו לתוצאה'], ['guide', 'פתחו מדריך הגשה'], ['filed', 'סימנו שהגישו']];
+const STEP_HE = { screen: 'סינון', me: 'שאלות עליך', years: 'שנים ומסמכים', results: 'תוצאה', guide: 'מדריך', after: 'אחרי ההגשה' };
+const STATUS_HE = { refund: 'החזר', debt: 'חוב', zero: 'אפס', blocked: 'חסום (פרמטר/מסמך)', cpa: 'רו"ח', out: 'מחוץ להיקף' };
+const BUCKETS = ['1-2k', '2k-5k', '5k-10k', '10k-20k', '20k+'];
+
+function bars(rows, total) {
+  const max = Math.max(1, ...rows.map((r) => r[1]));
+  return rows.map(([label, n]) => `<div class="bar"><span>${label}</span><span class="track"><span class="fill" style="width:${(100 * n) / max}%;display:block"></span></span><span class="n">${n}${total ? ` · ${Math.round((100 * n) / total)}%` : ''}</span></div>`).join('');
+}
+
+function show(s) {
+  const visits = (name) => s.byName.find((r) => r.name === name)?.visits || 0;
+  const step = (k) => s.funnel.find((r) => r.step === k)?.visits || 0;
+  const vals = { landing: visits('landing_view'), app: visits('app_open'), me: step('me'), years: step('years'), results: step('results'), guide: visits('guide_open'), filed: visits('filed') };
+  const top = vals.landing || vals.app;
+  const refundYears = s.statuses.find((r) => r.status === 'refund')?.n || 0;
+  $('out').innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="muted">נכנסו</div><div class="v">${vals.landing}</div></div>
+      <div class="kpi"><div class="muted">הגיעו לתוצאה</div><div class="v">${vals.results}</div></div>
+      <div class="kpi"><div class="muted">הגישו</div><div class="v">${vals.filed}</div></div>
+      <div class="kpi"><div class="muted">שנים עם החזר</div><div class="v">${refundYears}</div></div>
+    </div>
+    <div class="card"><h2 style="margin-top:0">משפך</h2>${bars(FUNNEL.map(([k, l]) => [l, vals[k]]), top)}</div>
+    <div class="card"><h2 style="margin-top:0">גובה ההחזר לשנה (₪)</h2>${bars(BUCKETS.map((b) => [b, s.buckets.find((r) => r.bucket === b)?.n || 0]))}
+      <p class="small muted">רק טווחים. האפליקציה אף פעם לא שולחת סכום מדויק.</p></div>
+    <div class="card"><h2 style="margin-top:0">תוצאות לפי סוג</h2>${bars(s.statuses.map((r) => [STATUS_HE[r.status] || r.status, r.n]))}
+      <p class="small muted">"חסום" = שנה שדורשת פרמטר שעוד לא אומת. זו רשימת העדיפויות לאימות.</p></div>
+    <div class="card"><h2 style="margin-top:0">איפה נתקעים</h2>${s.stuck.length ? bars(s.stuck.map((r) => [STEP_HE[r.screen] || r.screen, r.n])) : '<p class="muted">עוד אין לחיצות על "נתקעתי כאן".</p>'}</div>
+    <div class="card"><h2 style="margin-top:0">טלפון מול מחשב</h2>${bars(s.devices.map((r) => [r.device === 'phone' ? 'טלפון' : 'מחשב', r.visits]))}</div>
+    <div class="card"><h2 style="margin-top:0">לפי יום</h2><table class="calc"><tr><td><b>יום</b></td><td><b>נכנסו</b></td><td><b>התחילו</b></td><td><b>הגישו</b></td></tr>
+      ${s.daily.map((d) => `<tr><td>${d.day}</td><td>${d.landing}</td><td>${d.started}</td><td>${d.filed}</td></tr>`).join('')}</table></div>
+    <div class="card"><h2 style="margin-top:0">הכנסות</h2><p class="muted">הבטא חינמית. תשלום נכנס בגרסה 2, אחרי בדיקה משפטית. ראו docs/business-research.md.</p></div>`;
+}
+
+$('cfg').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const url = $('url').value.trim().replace(/\/$/, ''), token = $('token').value.trim();
+  store.set('admin.url', url); store.set('admin.token', token);
+  $('out').innerHTML = '<p>טוען…</p>';
+  try {
+    const r = await fetch(`${url}/stats`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) throw new Error(r.status === 401 ? 'סיסמה שגויה' : `שגיאה ${r.status}`);
+    show(await r.json());
+  } catch (e) { $('out').innerHTML = `<div class="notice bad">לא הצלחתי לטעון: ${e.message}</div>`; }
+});
+
+$('demo').addEventListener('click', () => show({
+  byName: [{ name: 'landing_view', visits: 240 }, { name: 'app_open', visits: 96 }, { name: 'guide_open', visits: 31 }, { name: 'filed', visits: 18 }],
+  funnel: [{ step: 'me', visits: 80 }, { step: 'years', visits: 66 }, { step: 'results', visits: 44 }],
+  buckets: [{ bucket: '1-2k', n: 12 }, { bucket: '2k-5k', n: 19 }, { bucket: '5k-10k', n: 14 }, { bucket: '10k-20k', n: 5 }, { bucket: '20k+', n: 1 }],
+  statuses: [{ status: 'refund', n: 51 }, { status: 'debt', n: 17 }, { status: 'blocked', n: 40 }, { status: 'zero', n: 22 }, { status: 'out', n: 6 }],
+  stuck: [{ screen: 'years', n: 9 }, { screen: 'me', n: 2 }],
+  devices: [{ device: 'phone', visits: 190 }, { device: 'desktop', visits: 80 }],
+  daily: [{ day: '2026-11-05', landing: 120, started: 50, filed: 9 }, { day: '2026-11-04', landing: 120, started: 46, filed: 9 }],
+}));
+</script>
+</body>
+</html>
