@@ -22,6 +22,13 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+      # הדפדפן שומר עותק של הקבצים. מוסיפים לכל קישור את מספר הגרסה, כדי שאחרי כל עדכון ייטען הקוד החדש.
+      - name: מספר גרסה בקישורים לקבצים
+        run: |
+          V="${GITHUB_SHA::8}"
+          sed -i -E "s#(from '\./[^']+\.js)'#\1?v=$V'#g" site/js/*.js
+          sed -i -E "s#(src=\"js/[^\"]+\.js)\"#\1?v=$V\"#g; s#(href=\"css/[^\"]+\.css)\"#\1?v=$V\"#g" site/*.html
+          grep -c "?v=$V" site/app.html site/js/app.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
