@@ -3,10 +3,12 @@
 
 import { computeYear, amountBucket } from './engine.js';
 import { buildGuide } from './guide.js';
-import { openYears, deadline } from './params.js';
+import { openYears, deadline, BOOKLET } from './params.js';
 import { track, device } from './analytics.js';
 import { parseDocument, summarizeDocs, DOC_TYPES } from './docparse.js';
-import { pdfLines } from './pdftext.js';
+import { pdfLines, renderPdf } from './pdftext.js';
+import { SETTLEMENTS } from './settlements.js';
+import { putFile, getFile, delFile, clearFiles, suggestName } from './filestore.js';
 
 const STORE = 'magia-li-v1';
 const STEPS = ['screen', 'me', 'years', 'results', 'guide', 'after'];
@@ -49,10 +51,10 @@ function mk(ctx) {
       const v = get(path);
       return `<div class="q${miss(path)}" data-q="${path}"><label for="${path}">${label}</label>${help(h)}<input id="${path}" type="number" inputmode="numeric" min="${opt.min ?? 0}" ${opt.max ? `max="${opt.max}"` : ''} data-path="${path}" data-num="1" value="${answered(v) ? esc(v) : ''}"></div>`;
     },
-    text(path, label, h) {
+    text(path, label, h, opt = {}) {
       ctx.req.push(path);
       const v = get(path);
-      return `<div class="q${miss(path)}" data-q="${path}"><label for="${path}">${label}</label>${help(h)}<input id="${path}" type="text" data-path="${path}" value="${esc(v)}"></div>`;
+      return `<div class="q${miss(path)}" data-q="${path}"><label for="${path}">${label}</label>${help(h)}<input id="${path}" type="text" data-path="${path}" value="${esc(v)}"${opt.list ? ` list="${opt.list}" autocomplete="off"` : ''}></div>`;
     },
   };
 }
@@ -96,8 +98,12 @@ function renderMe(ctx) {
   if (get('me.degree') === 'yes') html += `<div class="sub">${q.num('me.degreeYear', 'באיזו שנה סיימת?', 'השנה שבה קיבלת זכאות לתואר', { min: 1960, max: 2030 })}</div>`;
   html += q.yn('me.served', 'שירתת בשירות צבאי סדיר (חובה) או בשירות לאומי?', 'הכוונה לשירות הסדיר, לא למילואים. חיילים משוחררים מקבלים נקודות זיכוי ל-3 שנים אחרי השחרור. על מילואים נשאל בהמשך, בתוך כל שנה.');
   if (get('me.served') === 'yes') {
-    html += `<div class="sub">${q.num('me.dischargeYear', 'באיזו שנה השתחררת מהשירות הסדיר?', 'מספיק שנה. חודש נבקש רק אם הוא משנה את התוצאה.', { min: 1960, max: 2030 })}`;
-    if (dischargeNeedsMonth()) html += q.num('me.dischargeMonth', 'באיזה חודש השתחררת? (1–12)', 'הזכאות נמשכת 36 חודשים מהשחרור, ולכן בשנה שבה היא מתחילה או נגמרת החודש קובע כמה נקודות מגיעות.', { min: 1, max: 12 });
+    html += `<div class="sub">${q.choice('me.serviceType', 'איזה שירות?', [['army', 'צבאי'], ['national', 'שירות לאומי / אזרחי']])}
+      ${q.choice('me.serviceLength', 'כמה זמן שירתת בשירות הסדיר?', [['full', get('me.serviceType') === 'national' ? '24 חודשים ומעלה' : 'גבר: 23 חודשים ומעלה. אישה: 22 חודשים ומעלה'], ['partial', 'לפחות 12 חודשים, אבל פחות מזה'], ['short', 'פחות מ-12 חודשים']], 'שירות מלא = 2 נקודות זיכוי בשנה. שירות חלקי (12 חודשים ומעלה) = נקודה אחת בשנה. לא כולל תקופות של מאסר או נפקדות.')}
+      ${q.yn('me.career', 'המשכת לשירות קבע מיד אחרי השירות הסדיר?', 'בשירות קבע החישוב שונה, והמקורות לא מסכימים איך בדיוק.')}
+      ${q.num('me.dischargeYear', 'באיזו שנה השתחררת מהשירות הסדיר?', 'מספיק שנה. חודש נבקש רק אם הוא משנה את התוצאה.', { min: 1960, max: 2030 })}`;
+    if (dischargeNeedsMonth()) html += q.num('me.dischargeMonth', 'באיזה חודש השתחררת? (1–12)', 'הזכאות מתחילה בחודש שאחרי השחרור ונמשכת 36 חודשים. באחת השנים שבחרת היא מתחילה או נגמרת, ולכן החודש קובע כמה נקודות מגיעות בה.', { min: 1, max: 12 });
+    else if (get('me.dischargeYear')) html += '<div class="help">בשנים שבחרת הזכאות נמשכת את כל השנה, ולכן לא צריך את החודש המדויק.</div>';
     html += '</div>';
   }
   html += q.choice('me.prevRefund', 'קיבלת בעבר החזר מרשות המסים לחשבון הבנק שאליו תבקש את ההחזר הפעם?', [['yes', 'כן'], ['no', 'לא'], ['unsure', 'לא בטוח/ה']], 'אם לא, או שלא בטוח, מצרפים אישור ניהול חשבון. מורידים אותו מהאפליקציה של הבנק, וזה לוקח דקה.');
@@ -134,6 +140,8 @@ const HOWTO_BTL = `<details class="howto"><summary>איך מורידים את ה
   <li><b>אישור תשלומים שנתי</b>: בוחרים את השנה ומורידים. כאן רואים אם קיבלת אבטלה, דמי לידה או דמי פגיעה. מעלים אותו גם אם לא קיבלת כלום, כדי שנדע בוודאות.</li>
   <li>אם באישור יש תשלום: מורידים גם את "אישור שנתי למס הכנסה" של אותו תשלום. רק בו כתוב כמה מס נוכה.</li>
   <li>מילואים לא מופיעים באישור התשלומים השנתי. אם עשית מילואים ושולם לך ישירות מביטוח לאומי, מורידים "אישור שנתי למס הכנסה על תשלום תגמולי מילואים".</li></ol></details>`;
+const NAMING_TIP = `<div class="notice info small"><b>טיפ:</b> חלק מהאתרים שומרים קבצים בשם של מספרים ואותיות (למשל <bdi dir="ltr">a8f3k29.pdf</bdi>). כשמורידים, כדאי לתת לכל קובץ שם ברור עם השנה ומה יש בו, ולשמור את כל הקבצים של שנה בתיקייה אחת. למשל:
+  <bdi>2021-ריכוז-נתוני-שכר.pdf</bdi>, <bdi>2021-106-שם-המעסיק.pdf</bdi>, <bdi>2021-ביטוח-לאומי-אישור-תשלומים-שנתי.pdf</bdi>. אחרי ההעלאה נציע שם לכל קובץ שזיהינו, ואפשר לשמור עותק בשם הזה.</div>`;
 const BTL_LABELS = { miluim: 'תגמולי מילואים', unemployment: 'דמי אבטלה', maternity: 'דמי לידה', injury: 'דמי פגיעה בעבודה' };
 
 // מה המסמכים אומרים, ומה עוד חסר. משמש גם את התצוגה וגם את החישוב.
@@ -167,7 +175,7 @@ function renderPersonDocs(q, base, who, year) {
   let html = `<h3>מסמכים ${pron} לשנת ${year}</h3>
     <p>מעלים את הקבצים, והאפליקציה ממלאת את המספרים לבד. הקבצים נקראים בתוך הדפדפן ולא יוצאים מהמחשב.</p>
     <p class="small"><b>מה להעלות:</b> (1) ריכוז נתוני שכר מכלל המעסיקים, (2) טופס 106 מכל מעסיק שמופיע בריכוז, (3) אישור תשלומים שנתי מביטוח לאומי, ואישורי מס של ביטוח לאומי אם יש.</p>
-    ${HOWTO_SUMMARY}${HOWTO_BTL}
+    ${HOWTO_SUMMARY}${HOWTO_BTL}${NAMING_TIP}
     ${q.yn(`${base}.miluimDirect`, `עשית${who === 'spouse' ? ' (בן/בת הזוג)' : ''} מילואים בשנת ${year} ושולם ${who === 'spouse' ? 'לו/לה' : 'לך'} ישירות מביטוח לאומי (לא דרך המשכורת)?`, 'אם התגמול הגיע עם המשכורת, הוא כבר בטופס 106. אם הוא נכנס לבנק מביטוח לאומי, צריך את האישור השנתי על תגמולי מילואים.')}
     <label class="drop"><input type="file" accept="application/pdf,.pdf" multiple data-upload="${base}" data-upyear="${year}">
       <b>בחירת קבצי PDF</b><span class="small muted">אפשר לבחור כמה קבצים ביחד, ולהוסיף עוד אחר כך</span></label>`;
@@ -176,7 +184,9 @@ function renderPersonDocs(q, base, who, year) {
     html += `<table class="files">${docs.map((d, i) => {
       const ok = !['unknown', 'scanned', 'legacy106', 'error'].includes(d.type) && (!d.year || d.year === year);
       const what = d.type === 'error' ? 'לא הצלחנו לפתוח את הקובץ' : (DOC_TYPES[d.type] || d.type) + (d.year ? `, ${d.year}` : '') + (d.employer?.name ? `, ${d.employer.name}` : '');
-      return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div></td><td><button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
+      const better = ok ? suggestName(d, year, who) : null;
+      const rename = better && better !== d.fileName ? `<div class="small">שם מומלץ: <bdi>${esc(better)}</bdi> <button class="btn link" type="button" data-saveas="${base}|${i}">שמירת עותק בשם הזה</button></div>` : '';
+      return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div>${rename}</td><td class="actions"><button class="btn link" type="button" data-view="${base}|${i}">צפייה</button> <button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
     }).join('')}</table>`;
   }
   const { s, need, btl, complete } = docsState(base, year);
@@ -273,7 +283,17 @@ function renderYear(ctx, year) {
     ${q.yn(`${y}.otherIncome`, `היו לך${couple ? ' או לבן/בת הזוג' : ''} בשנת ${year} הכנסות מהשכרת דירה, מכירת מניות או קריפטו, דיבידנד, או הכנסות מחו"ל?`)}
     ${q.yn(`${y}.severance`, `קיבלת${couple ? ' (או בן/בת הזוג)' : ''} בשנת ${year} כסף לחשבון הבנק מפיצויים, או משכת כסף מקופת פנסיה, גמל או קרן השתלמות לפני הזמן?`, 'אם עזבת עבודה והפיצויים נשארו בקרן הפנסיה ולא משכת אותם, עונים "לא". המעסיק אולי נתן לך טופס 161, אבל אם הכסף לא יצא מהקרן אין כאן הכנסה לדווח עליה. קרן השתלמות אחרי 6 שנים: גם "לא".')}
     ${q.yn(`${y}.settlement`, `גרת בפועל ביישוב מזכה בשנת ${year}?`, 'בפועל = מרכז החיים: שם ישנת, שם גרו הילדים. רישום בתעודת הזהות לבד לא מספיק.')}`;
-  if (get(`${y}.settlement`) === 'yes') html += `<div class="sub">${q.num(`${y}.settlementMonths`, 'כמה חודשים בשנה הזו גרת שם בפועל?', '', { min: 1, max: 12 })}</div>`;
+  if (get(`${y}.settlement`) === 'yes') {
+    const table = SETTLEMENTS[year];
+    html += `<div class="sub">${q.text(`${y}.settlementName`, 'באיזה יישוב?', table ? 'מתחילים להקליד ובוחרים מהרשימה. הרשימה היא הרשימה הרשמית של רשות המסים לשנה הזו.' : '', { list: `dl-${year}` })}`;
+    if (table) html += `<datalist id="dl-${year}">${Object.keys(table).map((n) => `<option value="${esc(n)}">`).join('')}</datalist>`;
+    const st = settlementFor(year, get(`${y}.settlementName`));
+    if (st?.row?.rate) html += `<div class="notice info small">לפי <a href="${BOOKLET(year)}" target="_blank" rel="noopener">לוח העזר של רשות המסים ל-${year}</a>: ${esc(st.name)}, הנחה של ${st.row.rate}% מההכנסה, עד הכנסה של ${fmt(st.row.ceiling)} ₪ בשנה.</div>`;
+    else if (st?.msg) html += `<div class="notice warn small">${esc(st.msg)}</div>`;
+    html += `${q.num(`${y}.settlementMonths`, `כמה חודשים בשנת ${year} גרת שם בפועל?`, 'ההטבה ניתנת רק על החודשים שגרת שם.', { min: 1, max: 12 })}
+      ${q.yn(`${y}.settlement12`, 'גרת ביישוב מזכה לפחות 12 חודשים ברציפות (אפשר שחלק מהם בשנה אחרת)?', 'זה תנאי של סעיף 11. מי שעבר ליישוב, מקבל את ההטבה אחרי 12 חודשים, גם על החודשים הראשונים.')}
+      <div class="help">צריך לצרף לדו"ח "אישור תושבות" (טופס 1312א) מהרשות המקומית או מהמועצה האזורית.</div></div>`;
+  }
   html += q.yn(`${y}.lifeIns`, `שילמת בעצמך בשנת ${year} על ביטוח חיים, כולל ביטוח חיים של משכנתא?`, 'הכוונה לביטוח שאתה משלם, למשל בהוראת קבע לחברת הביטוח או דרך הבנק של המשכנתא. ביטוח שהמעסיק מפריש לך דרך התלוש לא נחשב כאן. אם כן, תצטרך להוריד "אישור שנתי למס הכנסה" מהאזור האישי באתר של חברת הביטוח שלך.');
   if (get(`${y}.lifeIns`) === 'yes') html += `<div class="sub">${q.num(`${y}.lifeInsAmount`, 'סכום הפרמיות בשנה לפי האישור')}</div>`;
   html += q.yn(`${y}.disability`, `שילמת בשנת ${year} ביטוח אובדן כושר עבודה פרטי (לא דרך המעסיק)?`);
@@ -323,7 +343,7 @@ function renderYears(ctx) {
 function personFrom(base, gender, flags, year) {
   if (get(`${base}.mode`) !== 'manual') {
     const { s, btl } = docsState(base, year);
-    const employers = s.employers.map((e) => ({ name: e.name, income: e.income, taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, settlementCode: e.settlementCode }));
+    const employers = s.employers.map((e) => ({ name: e.name, income: e.income, taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, insuredIncome: e.insuredIncome, settlementCode: e.settlementCode }));
     return { gender, flags, employers, btl: btl.map((b) => ({ label: b.label, gross: b.gross, taxWithheld: b.taxWithheld })), credits: {}, settlement: { employerGave: employers.reduce((t, e) => t + (e.settlementCode || 0), 0) } };
   }
   const n = Number(get(`${base}.employersCount`)) || 0;
@@ -343,17 +363,44 @@ function personFrom(base, gender, flags, year) {
   return { gender, flags, employers, btl, credits: {}, settlement: { employerGave: employers.reduce((s, e) => s + (e.settlementCode || 0), 0) } };
 }
 
+// חיפוש יישוב בטבלה של השנה. מתעלמים מגרשיים, מרווחים כפולים ומסוגריים, כדי ש"נעמה" ימצא גם "נעמ"ה".
+const normName = (s) => String(s || '').replace(/["'״׳*]/g, '').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+function settlementFor(year, name) {
+  if (!answered(name)) return null;
+  const table = SETTLEMENTS[year];
+  if (!table) return { msg: `עוד אין לנו את רשימת היישובים הרשמית לשנת ${year}, ולכן השנה הזו לא תחושב. אנחנו עובדים על זה.` };
+  const key = Object.keys(table).find((n) => normName(n) === normName(name));
+  if (!key) return { msg: `"${name}" לא מופיע ברשימת היישובים המוטבים של ${year}. בדקו את האיות (בחרו מהרשימה). אם הוא באמת לא ברשימה, אין הטבה לשנה הזו, וכדאי לענות "לא" בשאלה על יישוב מזכה.` };
+  const row = table[key];
+  if (row.unclear) return { name: key, msg: `לא הצלחנו לקרוא בוודאות את השיעור של ${key} ב-${year} מהמקור הרשמי, ולכן השנה הזו לא תחושב עד שנבדוק.` };
+  if (row.from) return { name: key, msg: `ב-${year} השיעור של ${key} השתנה באמצע השנה (מ-${row.from.split('-').reverse().join('.')}). חישוב כזה עוד לא נתמך.` };
+  return { name: key, row };
+}
+
+// חייל משוחרר: כמה חודשים בשנה הזו נמצאים בתוך 36 החודשים שמתחילים בחודש שאחרי השחרור.
+function dischargedFor(year) {
+  if (get('me.served') !== 'yes') return null;
+  const level = get('me.serviceLength');
+  if (level !== 'full' && level !== 'partial') return null;
+  const sy = Number(get('me.dischargeYear')), dm = Number(get('me.dischargeMonth'));
+  let months = 0;
+  if (year > sy && year < sy + 3) months = 12;
+  else if (year === sy || year === sy + 3) months = dm ? (year === sy ? 12 - dm : dm) : 0;
+  if (!months) return null;
+  return { level, months, unsupported: get('me.career') === 'yes' };
+}
+
 function caseFor(year) {
   const y = (k) => get(`years.${year}.${k}`);
   const kids = kidsYears().some((b) => year - b >= 0 && year - b <= 18);
   const m = y('marital');
   const couple = m === 'married';
-  const dy = Number(get('me.degreeYear')), sy = Number(get('me.dischargeYear'));
+  const dy = Number(get('me.degreeYear'));
   const flags = {
     kids,
     singleParent: kids && !couple && m !== 'commonLaw',
     degree: get('me.degree') === 'yes' && (year === dy || year === dy + 1),
-    dischargedSoldier: get('me.served') === 'yes' && year >= sy && year <= sy + 3,
+    dischargedSoldier: dischargedFor(year),
     alimony: y('alimony') === 'yes',
     spousePoints: couple && y('spouseIncome') === 'no' && y('spouseSpecial') === 'yes',
   };
@@ -364,11 +411,13 @@ function caseFor(year) {
     donations: y('donations') === 'yes' ? +y('donationsAmount') : 0,
     institutionRelative: y('institution') === 'yes' ? +y('institutionAmount') : 0,
   };
-  self.settlement.livedMonths = y('settlement') === 'yes' ? +y('settlementMonths') : 0;
+  const lived = y('settlement') === 'yes' && y('settlement12') === 'yes' ? +y('settlementMonths') : 0;
+  const st = lived ? settlementFor(year, y('settlementName')) : null;
+  Object.assign(self.settlement, { livedMonths: lived, rate: st?.row?.rate || 0, ceiling: st?.row?.ceiling || 0, missing: st?.msg });
   const people = [self];
   if (couple && y('spouseIncome') === 'yes') {
     const sp = { role: 'spouse', ...personFrom(`years.${year}.spouse`, y('spouseGender'), { kids }, year) };
-    sp.settlement.livedMonths = self.settlement.livedMonths;
+    Object.assign(sp.settlement, { livedMonths: lived, rate: self.settlement.rate, ceiling: self.settlement.ceiling, missing: self.settlement.missing });
     people.push(sp);
   }
   return { maritalStatus: m, people, needsBankProof: get('me.prevRefund') !== 'yes' };
@@ -416,7 +465,9 @@ function renderResults() {
       html += `<table class="calc">
         <tr><td>סה"כ הכנסות<div class="muted small">משכורת ותשלומי ביטוח לאומי</div></td><td class="num">${fmt(L('totalIncome'))}</td></tr>
         <tr><td>מס ברוטו<div class="muted small">לפי מדרגות המס של ${r.year}</div></td><td class="num">${fmt(L('grossTax'))}</td></tr>
-        <tr><td>זיכויים<div class="muted small">נקודות זיכוי (${r.results.map((p) => p.lines.points).join(' + ')}) × ערך נקודה. זיכוי מוריד מהמס, לא מההכנסה</div></td><td class="num">−${fmt(L('credits'))}</td></tr>
+        <tr><td>נקודות זיכוי<div class="muted small">${r.results.map((p) => p.lines.points).join(' + ')} נקודות × ערך נקודה בשנת ${r.year}. זיכוי מוריד מהמס, לא מההכנסה</div></td><td class="num">−${fmt(L('pointsCredit'))}</td></tr>
+        ${L('pensionCredit') ? `<tr><td>זיכוי על הפקדות לפנסיה<div class="muted small">35% מההפקדות שלך (שדות 045/086 בטופס 106), עד 7% מההכנסה המזכה. ההכנסה המזכה מוגבלת לתקרה של השנה</div></td><td class="num">−${fmt(L('pensionCredit'))}</td></tr>` : ''}
+        ${L('settlementCredit') ? `<tr><td>הטבת יישוב מזכה<div class="muted small">אחוז ההנחה של היישוב × ההכנסה, עד התקרה, לפי מספר החודשים שגרת שם</div></td><td class="num">−${fmt(L('settlementCredit'))}</td></tr>` : ''}
         <tr><td>מס שהיה צריך לשלם</td><td class="num">${fmt(L('taxDue'))}</td></tr>
         <tr><td>מס שנוכה בפועל<div class="muted small">מכל טופסי ה-106 ואישורי ביטוח לאומי</div></td><td class="num">${fmt(L('withheld'))}</td></tr>
       </table>`;
@@ -488,9 +539,23 @@ function render(showMissing = false) {
   app.innerHTML = `<div class="brand"><a href="./" style="text-decoration:none">מגיע לי</a></div>
     <div class="progress">${STEPS.slice(0, 4).map((s, i) => `<span class="${i <= Math.min(idx, 3) ? 'on' : ''}" title="${STEP_NAMES[s]}"></span>`).join('')}</div>
     ${body}${nav}
-    <footer>התשובות נשמרות רק במחשב הזה, כדי שתוכל לסגור את הדף ולהמשיך אחר כך. הן לא נשלחות לשום מקום. <button class="btn link" type="button" id="wipe">מחיקת התשובות שלי מהמחשב הזה</button> (למשל אם זה מחשב משותף, או כדי להתחיל מחדש)</footer>`;
+    <footer>התשובות והקבצים שהעלית נשמרים רק במחשב הזה, כדי שתוכל לסגור את הדף ולהמשיך אחר כך. הן לא נשלחות לשום מקום. <button class="btn link" type="button" id="wipe">מחיקת התשובות שלי מהמחשב הזה</button> (למשל אם זה מחשב משותף, או כדי להתחיל מחדש)</footer>`;
   app._ctx = ctx;
   if (focusPath) document.querySelector(`[data-path="${CSS.escape(focusPath)}"]`)?.focus();
+}
+
+// צפייה בקובץ בתוך האפליקציה, בחלון מעל הדף.
+async function showViewer(name, blob, url) {
+  const box = document.createElement('div');
+  box.className = 'viewer';
+  box.innerHTML = `<div class="viewer-bar"><bdi dir="ltr">${esc(name)}</bdi><span class="spacer"></span><a class="btn link" href="${url}" target="_blank" rel="noopener">פתיחה בחלון חדש</a><button class="btn secondary" type="button" data-close>סגירה</button></div><div class="viewer-pages"><p class="muted">טוען…</p></div>`;
+  document.body.appendChild(box);
+  const close = () => { box.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  box.addEventListener('click', (e) => { if (e.target === box || e.target.closest('[data-close]')) close(); });
+  const pages = box.querySelector('.viewer-pages');
+  try { pages.innerHTML = ''; await renderPdf(blob, pages); } catch { pages.innerHTML = '<p>לא הצלחנו להציג את הקובץ כאן. אפשר לפתוח אותו בחלון חדש.</p>'; }
 }
 
 // קריאת הקבצים בדפדפן. נשמרים רק סוג המסמך, השנה, המעסיק והמספרים. לא הטקסט, ולא מספר הזהות המלא.
@@ -502,6 +567,7 @@ async function readFiles(base, files) {
     let d;
     try { d = parseDocument(await pdfLines(f)); } catch { d = { type: 'error' }; }
     d.fileName = f.name;
+    await putFile(`${base}|${f.name}`, f);
     const i = docs.findIndex((x) => x.fileName === f.name);
     if (i >= 0) docs[i] = d; else docs.push(d);
     track('doc_read', { status: d.type });
@@ -549,8 +615,25 @@ app.addEventListener('click', async (ev) => {
   if (t.dataset.rmdoc) {
     const [base, i] = t.dataset.rmdoc.split('|');
     const docs = get(`${base}.docs`) || [];
-    docs.splice(Number(i), 1);
+    const [gone] = docs.splice(Number(i), 1);
+    if (gone) delFile(`${base}|${gone.fileName}`);
     set(`${base}.docs`, docs); set(`${base}.docsConfirmed`, ''); save(); render(); return;
+  }
+  if (t.dataset.view || t.dataset.saveas) {
+    const [base, i] = (t.dataset.view || t.dataset.saveas).split('|');
+    const d = (get(`${base}.docs`) || [])[Number(i)];
+    if (!d) return;
+    const blob = await getFile(`${base}|${d.fileName}`);
+    if (!blob) { alert('הקובץ לא נשמר בדפדפן הזה (למשל אחרי מחיקה או בגלישה פרטית). אפשר להעלות אותו שוב.'); return; }
+    const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+    if (t.dataset.view) showViewer(d.fileName, blob, url);
+    else {
+      const year = Number(base.split('.')[1]);
+      const a = Object.assign(document.createElement('a'), { href: url, download: suggestName(d, year, base.endsWith('.spouse') ? 'spouse' : 'self') });
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
   }
   if (t.dataset.mode) {
     const [base, mode] = t.dataset.mode.split('|');
@@ -579,8 +662,9 @@ app.addEventListener('click', async (ev) => {
     return;
   }
   if (t.id === 'filedBtn' && !state.ui.filed) { state.ui.filed = true; save(); track('filed'); render(); return; }
-  if (t.id === 'wipe' && confirm('למחוק את כל התשובות והמספרים שהזנת?')) {
+  if (t.id === 'wipe' && confirm('למחוק את כל התשובות, המספרים והקבצים שהעלית?')) {
     try { localStorage.removeItem(STORE); } catch {}
+    clearFiles();
     state = { step: 'screen', screen: {}, me: {}, years: {}, ui: {} };
     render();
   }

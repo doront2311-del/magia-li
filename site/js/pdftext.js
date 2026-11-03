@@ -50,3 +50,21 @@ export async function pdfLines(file) {
   }
   return lines;
 }
+
+// מציג קובץ PDF בתוך האפליקציה: כל עמוד כתמונה (canvas). עובד גם בטלפון, בלי תוסף PDF.
+export async function renderPdf(blob, container) {
+  const lib = await loadPdfjs();
+  const doc = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()), isEvalSupported: false }).promise;
+  const width = Math.min(container.clientWidth || 800, 900);
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const base = page.getViewport({ scale: 1 });
+    const ratio = window.devicePixelRatio || 1;
+    const vp = page.getViewport({ scale: (width / base.width) * ratio });
+    const c = document.createElement('canvas');
+    c.width = vp.width; c.height = vp.height;
+    c.style.width = `${width}px`;
+    container.appendChild(c);
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+  }
+}

@@ -28,12 +28,12 @@ function neededRules(p) {
   if (f.alimony) need.push('alimonyPoints');
   if (f.spousePoints) need.push('spousePoints');
   if (sum(p.employers, 'pensionDeposit') > 0) need.push('pensionCredit');
+  if (f.dischargedSoldier?.unsupported) need.push('dischargedSoldierCareer');
   const c = p.credits || {};
   if (c.lifeInsurance > 0) need.push('lifeInsuranceCredit');
   if (c.donations > 0) need.push('donationsCredit');
   if (c.disabilityInsurance > 0) need.push('disabilityInsuranceDeduction');
   if (c.institutionRelative > 0) need.push('institutionRelativeCredit');
-  if ((p.settlement?.livedMonths || 0) > 0) need.push('settlementCredit');
   return need;
 }
 
@@ -47,8 +47,14 @@ export function computePerson(year, p) {
   for (const key of ['brackets', 'creditPointValue']) {
     if (!ALLOWED.has(yp[key].status)) blocks.push(`${key === 'brackets' ? 'מדרגות המס' : 'ערך נקודת זיכוי'} לשנת ${year} עוד לא אומתו`);
   }
+  const pensionNeeded = sum(p.employers, 'pensionDeposit') > 0;
+  if (pensionNeeded && !ALLOWED.has(yp.pensionIncomeCeiling?.status)) blocks.push(`תקרת ההכנסה המזכה לפנסיה לשנת ${year} עוד לא אומתה`);
   for (const r of neededRules(p)) {
+    if (r === 'dischargedSoldierCareer') { stops.push('שירות קבע מיד אחרי השירות הסדיר משנה את חישוב נקודות החייל המשוחרר, והמקורות לא מסכימים איך. מומלץ רואה חשבון לשנה הזו.'); continue; }
     if (!ALLOWED.has(RULES[r].status)) blocks.push(`${RULES[r].label}: הכלל עוד לא אומת באפליקציה`);
+  }
+  if ((p.settlement?.livedMonths || 0) > 0 && !(p.settlement.rate > 0)) {
+    blocks.push(p.settlement.missing || `הטבת יישוב מזכה: אין לנו עדיין את טבלת היישובים הרשמית לשנת ${year}`);
   }
   if ((p.settlement?.employerGave || 0) > 0 && !(p.settlement?.livedMonths > 0)) {
     stops.push('בטופס 106 המעסיק נתן הטבת יישוב (קוד 093/193), אבל ענית שלא גרת ביישוב מזכה. לפני הגשה לשנה הזו מומלץ להתייעץ עם רואה חשבון, כי ההגשה פותחת את השנה לבדיקה.');
@@ -66,15 +72,30 @@ export function computePerson(year, p) {
   const taxable = totalIncome - deductions;
   // רשות המסים עיגלה כלפי מטה במקרה 2020 (7,061.7 → 7,061). כויל ממקרה אחד.
   const grossTax = Math.floor(taxOnIncome(taxable, yp.brackets.value));
-  const points = RULES.residentPoints.value + (p.gender === 'f' ? RULES.womanExtraPoints.value : 0);
-  const credits = Math.round(points * yp.creditPointValue.value);
+  // חייל משוחרר: חלק יחסי לפי מספר החודשים בשנה הזו שבתוך 36 החודשים.
+  const ds = p.flags?.dischargedSoldier;
+  const soldierPoints = ds && ds.months > 0 ? (RULES.dischargedSoldierPoints.value[ds.level] || 0) * ds.months / 12 : 0;
+  const points = Math.round((RULES.residentPoints.value + (p.gender === 'f' ? RULES.womanExtraPoints.value : 0) + soldierPoints) * 100) / 100;
+  const pointsCredit = Math.round(points * yp.creditPointValue.value);
+  // פנסיה (45א): 35% מההפקדה, עד 7% מההכנסה המזכה. ההכנסה המזכה = ההכנסה המבוטחת (244/245) או המשכורת, עד התקרה השנתית.
+  let pensionCredit = 0;
+  if (pensionNeeded && yp.pensionIncomeCeiling) {
+    const pc = RULES.pensionCredit.value;
+    const base = Math.min(sum(p.employers.map((e) => ({ v: e.insuredIncome > 0 ? e.insuredIncome : e.income })), 'v'), yp.pensionIncomeCeiling.value * 12);
+    pensionCredit = Math.round(pc.rate * Math.min(sum(p.employers, 'pensionDeposit'), pc.share * base));
+  }
+  // יישוב מזכה (סעיף 11): אחוז × ההכנסה מעבודה, עד התקרה השנתית כפול חלק השנה שבו גרו שם.
+  let settlementCredit = 0;
+  const st = p.settlement || {};
+  if (st.livedMonths > 0 && st.rate > 0) settlementCredit = Math.round(st.rate / 100 * Math.min(totalIncome, st.ceiling * st.livedMonths / 12));
+  const credits = pointsCredit + pensionCredit + settlementCredit;
   const taxDue = Math.max(0, grossTax - credits);
   const withheld = sum(p.employers, 'taxWithheld') + sum(p.btl, 'taxWithheld'); // 042
   const balance = withheld - taxDue;
 
   return {
     blocks, stops,
-    lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, credits, taxDue, withheld, balance },
+    lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, pointsCredit, pensionCredit, settlementCredit, credits, taxDue, withheld, balance },
   };
 }
 

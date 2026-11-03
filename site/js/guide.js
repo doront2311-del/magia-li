@@ -59,7 +59,25 @@ export function buildGuide(year, yearCase, result) {
   add('042', withheld, 'סעיף 81, מס שנוכה במקור: מכל טופסי ה-106 ואישורי ביטוח לאומי');
   const docs = all.reduce((s, p) => s + (p.employers || []).length + (p.btl || []).length, 0);
   income.push({ field: 'מצ"ב __ טופסי 106', value: String(docs), source: 'מספר המסמכים שמצורפים (106 ואישורי ביטוח לאומי)' });
-  tabs.push({ title: 'פירוט הכנסות', fields: income, note: 'כל שאר השדות ריקים. נקודות הזיכוי לתושב (020) מסומנות אוטומטית.' });
+  // הפקדות לפנסיה: נלקחות מטופס ה-106 (045/086 = הפקדות העובד, 244/245 = הכנסה מבוטחת).
+  for (const p of all) {
+    const dep = (p.employers || []).reduce((s, e) => s + (Number(e.pensionDeposit) || 0), 0);
+    const ins = (p.employers || []).reduce((s, e) => s + (Number(e.insuredIncome) || 0), 0);
+    const sp = p.role === 'spouse';
+    if (dep) income.push({ field: sp ? '086' : '045', value: fmt(dep), source: `הפקדות עובד לקופת גמל לקצבה${sp ? ' (בן/בת הזוג)' : ''}: סכום השדה 045/086 מטופסי ה-106` });
+    if (ins) income.push({ field: sp ? '245' : '244', value: fmt(ins), source: `הכנסה מבוטחת${sp ? ' (בן/בת הזוג)' : ''}: סכום השדה 244/245 מטופסי ה-106` });
+  }
+  tabs.push({ title: 'פירוט הכנסות', fields: income, note: 'כל שאר השדות ריקים. נקודות הזיכוי לתושב (020) מסומנות אוטומטית. אם מספר שדה במסך לא תואם בדיוק (עצמי מול בן/בת זוג), בוחרים לפי הכותרת של השדה.' });
+
+  const credits = [];
+  const ds = self?.flags?.dischargedSoldier;
+  if (ds) credits.push({ field: 'חייל משוחרר', value: `תאריך השחרור מהשירות הסדיר${ds.level === 'partial' ? ', ושירות חלקי (12 עד 22/23 חודשים)' : ''}`, source: 'תשובות: שנת השחרור, אורך השירות. נקודות הזיכוי מחושבות לפי מספר החודשים בשנה הזו' });
+  const st = self?.settlement;
+  if (st?.livedMonths > 0 && st.rate > 0) {
+    credits.push({ field: 'תושב יישוב מזכה', value: `${st.livedMonths} חודשים, ${st.rate}% עד ${fmt(st.ceiling)} ₪`, source: 'תשובה: היישוב ומספר החודשים. השיעור והתקרה מלוח העזר של רשות המסים' });
+    credits.push({ field: 'צרופה', value: 'אישור תושבות (טופס 1312א) מהרשות המקומית', source: 'חובה כשמבקשים הטבת יישוב' });
+  }
+  if (credits.length) tabs.push({ title: 'נקודות זיכוי והטבות', fields: credits, note: 'בלשונית הזו מסמנים רק את מה שכתוב כאן. את שמות השדות המדויקים במסך עוד לא אימתנו מול צילום מסך, אז אם משהו לא תואם, עוצרים וכותבים לנו.' });
 
   if (result?.results) {
     const L = (k) => result.results.reduce((s, r) => s + r.lines[k], 0);
@@ -89,6 +107,7 @@ export function buildGuide(year, yearCase, result) {
     fields: [
       ...all.flatMap((p) => (p.employers || []).map((e) => ({ field: 'קובץ', value: `טופס 106 – ${e.name}`, source: p.role === 'spouse' ? 'בן/בת הזוג' : 'שלך' }))),
       ...all.flatMap((p) => (p.btl || []).map((x) => ({ field: 'קובץ', value: `ביטוח לאומי – ${x.label}`, source: p.role === 'spouse' ? 'בן/בת הזוג' : 'שלך' }))),
+      ...(self?.settlement?.livedMonths > 0 && self.settlement.rate > 0 ? [{ field: 'קובץ', value: 'אישור תושבות (טופס 1312א)', source: 'תשובה: גרת ביישוב מזכה' }] : []),
       ...(yearCase.needsBankProof ? [{ field: 'קובץ', value: 'אישור ניהול חשבון', source: 'תשובה: לא קיבלת בעבר החזר לחשבון הזה' }] : []),
     ],
   });
