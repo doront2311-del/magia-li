@@ -118,12 +118,18 @@ test('פנסיה מתחת לתקרה: 35% מכל ההפקדה', () => {
   assert.equal(computeYear(2022, { people: [p] }).results[0].lines.pensionCredit, 1_260);
 });
 
-test('פנסיה 2021: התקרה ממקור אחד בלבד עוצרת את השנה', () => {
+test('פנסיה 2026: תקרה שלא אומתה עוצרת את השנה', () => {
   const p = person();
   p.employers[0].pensionDeposit = 5_000;
-  const r = computeYear(2021, { people: [p] });
+  const r = computeYear(2026, { people: [p] });
   assert.equal(r.status, 'blocked');
   assert.match(r.blocks.join(), /תקרת ההכנסה המזכה/);
+});
+
+test('פנסיה 2021: 8,700 ₪ לחודש (לשכת רו"ח + כל זכות)', () => {
+  const p = person();
+  p.employers[0].pensionDeposit = 10_000;
+  assert.equal(computeYear(2021, { people: [p] }).results[0].lines.pensionCredit, Math.round(0.35 * 0.07 * 104_400));
 });
 
 test('יישוב מזכה: 12% עד 196,080, 6 חודשים', () => {
@@ -139,9 +145,13 @@ test('יישוב מזכה בלי טבלה לשנה = עצירה עם הסבר', 
 
 test('טבלת היישובים: שניר 12% בכל השנים, והתקרות תואמות את לוח העזר', async () => {
   const { SETTLEMENTS } = await import('../site/js/settlements.js');
+  assert.deepEqual(SETTLEMENTS[2020]['שניר'], { rate: 12, ceiling: 192_600 });
+  assert.deepEqual(SETTLEMENTS[2021]['שניר'], { rate: 12, ceiling: 191_400 });
   assert.deepEqual(SETTLEMENTS[2022]['שניר'], { rate: 12, ceiling: 196_080 });
   assert.deepEqual(SETTLEMENTS[2023]['שניר'], { rate: 12, ceiling: 206_400 });
   assert.deepEqual(SETTLEMENTS[2024]['שניר'], { rate: 12, ceiling: 213_240 });
   assert.deepEqual(SETTLEMENTS[2025]['שניר'], { rate: 12, ceiling: 213_240 });
-  for (const y of [2022, 2023, 2024, 2025]) assert.ok(Object.keys(SETTLEMENTS[y]).length > 470);
+  assert.ok(SETTLEMENTS[2021]['שיזף'].complex, 'שיזף 2021 התחיל באמצע השנה');
+  assert.ok(SETTLEMENTS[2020]['קריית שמונה'].from, 'קריית שמונה 2020 השתנה ב-1.7');
+  for (const y of [2020, 2021, 2022, 2023, 2024, 2025]) assert.ok(Object.keys(SETTLEMENTS[y]).length > 470);
 });
