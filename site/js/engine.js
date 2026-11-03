@@ -4,7 +4,7 @@
 // הכנסות → ניכויים → הכנסה חייבת → מס ברוטו → זיכויים → מס מגיע → ניכויים במקור → יתרה.
 // יתרה חיובית = מגיע החזר. יתרה שלילית = חוב.
 
-import { PARAMS, RULES, ALLOWED } from './params.js';
+import { PARAMS, RULES, ALLOWED, childPoints } from './params.js';
 
 export function taxOnIncome(income, brackets) {
   let tax = 0, low = 0;
@@ -49,7 +49,19 @@ export function computePerson(year, p) {
   }
   const pensionNeeded = sum(p.employers, 'pensionDeposit') > 0;
   if (pensionNeeded && !ALLOWED.has(yp.pensionIncomeCeiling?.status)) blocks.push(`תקרת ההכנסה המזכה לפנסיה לשנת ${year} עוד לא אומתה`);
+  // ילדים: flags.kids = { ages: [...], column: 'mother'|'father' }. true בלבד (בלי פרטים) = חסום.
+  let kidPoints = 0;
+  const k = p.flags?.kids;
+  if (k) {
+    if (k.notWithMe) stops.push('הילדים לא גרים איתך. במקרה כזה נקודות הזיכוי תלויות בהסדרי המשמורת ובמזונות. מומלץ רואה חשבון לשנה הזו.');
+    else if (!k.ages || !k.column) blocks.push('נקודות זיכוי בעד ילדים: חסרים פרטים (גילאי הילדים, ומי מקבל את קצבת הילדים)');
+    else {
+      const cp = childPoints(year, k.column, k.ages);
+      if (cp.missing) blocks.push(cp.missing); else kidPoints = cp.points;
+    }
+  }
   for (const r of neededRules(p)) {
+    if (r === 'childrenPoints') continue; // נבדק למעלה לפי שנה וגיל
     if (r === 'dischargedSoldierCareer') { stops.push('שירות קבע מיד אחרי השירות הסדיר משנה את חישוב נקודות החייל המשוחרר, והמקורות לא מסכימים איך. מומלץ רואה חשבון לשנה הזו.'); continue; }
     if (!ALLOWED.has(RULES[r].status)) blocks.push(`${RULES[r].label}: הכלל עוד לא אומת באפליקציה`);
   }
@@ -75,7 +87,7 @@ export function computePerson(year, p) {
   // חייל משוחרר: חלק יחסי לפי מספר החודשים בשנה הזו שבתוך 36 החודשים.
   const ds = p.flags?.dischargedSoldier;
   const soldierPoints = ds && ds.months > 0 ? (RULES.dischargedSoldierPoints.value[ds.level] || 0) * ds.months / 12 : 0;
-  const points = Math.round((RULES.residentPoints.value + (p.gender === 'f' ? RULES.womanExtraPoints.value : 0) + soldierPoints) * 100) / 100;
+  const points = Math.round((RULES.residentPoints.value + (p.gender === 'f' ? RULES.womanExtraPoints.value : 0) + soldierPoints + kidPoints) * 100) / 100;
   const pointsCredit = Math.round(points * yp.creditPointValue.value);
   // פנסיה (45א): 35% מההפקדה, עד 7% מההכנסה המזכה. ההכנסה המזכה = ההכנסה המבוטחת (244/245) או המשכורת, עד התקרה השנתית.
   let pensionCredit = 0;
@@ -95,7 +107,7 @@ export function computePerson(year, p) {
 
   return {
     blocks, stops,
-    lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, pointsCredit, pensionCredit, settlementCredit, credits, taxDue, withheld, balance },
+    lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, kidPoints, pointsCredit, pensionCredit, settlementCredit, credits, taxDue, withheld, balance },
   };
 }
 

@@ -93,7 +93,12 @@ function renderMe(ctx) {
   <div class="card">
     ${q.choice('me.gender', 'מין', [['m', 'גבר'], ['f', 'אישה']], 'אישה מקבלת חצי נקודת זיכוי נוספת.')}
     ${q.yn('me.hasKids', `היו לך ילדים מתחת לגיל 19 ${selText()}?`, 'כולל ילד שנולד באותה שנה. ילדים מזכים בנקודות זיכוי לפי הגיל שלהם בכל שנה.')}`;
-  if (get('me.hasKids') === 'yes') html += `<div class="sub">${q.text('me.kidsBirthYears', 'שנות הלידה של הילדים', 'מופרדות בפסיק, למשל: 2022, 2025')}</div>`;
+  if (get('me.hasKids') === 'yes') {
+    html += `<div class="sub">${q.text('me.kidsBirthYears', 'שנות הלידה של הילדים', 'מופרדות בפסיק, למשל: 2022, 2025')}
+      ${q.yn('me.kidsLiveWith', 'הילדים גרים איתך באותו בית?', 'אם יש ילד שגר אצל ההורה השני (למשל אחרי גירושין), עונים "לא".')}`;
+    if (get('me.kidsLiveWith') === 'yes') html += q.choice('me.allowance', 'לאיזה חשבון בנק נכנסת קצבת הילדים מביטוח לאומי?', [['me', 'לחשבון שלי'], ['other', 'לחשבון של ההורה השני']], 'ההורה שמקבל את הקצבה מקבל יותר נקודות זיכוי על ילדים מגיל 6. ברוב המשפחות הקצבה נכנסת לחשבון של האם. אפשר לבדוק באזור האישי בביטוח לאומי.');
+    html += '</div>';
+  }
   html += q.yn('me.degree', 'סיימת אי פעם תואר אקדמי או תעודת מקצוע? (בכל שנה, לא רק בשנים שבחרת)', 'בשאלה הבאה נשאל באיזו שנה. נקודת הזיכוי ניתנת רק בשנה שאחרי הסיום, אז האפליקציה תבדוק לבד אם היא נוגעת לשנים שבחרת.');
   if (get('me.degree') === 'yes') html += `<div class="sub">${q.num('me.degreeYear', 'באיזו שנה סיימת את התואר או את הלימודים לתעודה?', 'השנה שבה קיבלת זכאות לתואר (כתוב באישור הזכאות מהמוסד)', { min: 1960, max: 2030 })}</div>`;
   html += q.yn('me.served', 'שירתת בשירות צבאי סדיר (חובה) או בשירות לאומי?', 'הכוונה לשירות הסדיר, לא למילואים. חיילים משוחררים מקבלים נקודות זיכוי ל-3 שנים אחרי השחרור. על מילואים נשאל בהמשך, בתוך כל שנה.');
@@ -418,12 +423,17 @@ function dischargedFor(year) {
 
 function caseFor(year) {
   const y = (k) => get(`years.${year}.${k}`);
-  const kids = kidsYears().some((b) => year - b >= 0 && year - b <= 18);
+  const ages = kidsYears().map((b) => year - b).filter((a) => a >= 0 && a <= 18);
+  const kids = ages.length > 0;
+  const kidsFlag = (forSpouse) => kids && {
+    ages, notWithMe: get('me.kidsLiveWith') === 'no',
+    column: get('me.allowance') ? ((get('me.allowance') === 'me') !== forSpouse ? 'mother' : 'father') : null,
+  };
   const m = y('marital');
   const couple = m === 'married';
   const dy = Number(get('me.degreeYear'));
   const flags = {
-    kids,
+    kids: kidsFlag(false),
     singleParent: kids && !couple && m !== 'commonLaw',
     degree: get('me.degree') === 'yes' && (year === dy || year === dy + 1),
     dischargedSoldier: dischargedFor(year),
@@ -442,7 +452,7 @@ function caseFor(year) {
   Object.assign(self.settlement, { livedMonths: lived, rate: st?.row?.rate || 0, ceiling: st?.row?.ceiling || 0, missing: st?.msg });
   const people = [self];
   if (couple && y('spouseIncome') === 'yes') {
-    const sp = { role: 'spouse', ...personFrom(`years.${year}.spouse`, y('spouseGender'), { kids }, year) };
+    const sp = { role: 'spouse', ...personFrom(`years.${year}.spouse`, y('spouseGender'), { kids: kidsFlag(true) }, year) };
     Object.assign(sp.settlement, { livedMonths: lived, rate: self.settlement.rate, ceiling: self.settlement.ceiling, missing: self.settlement.missing });
     people.push(sp);
   }

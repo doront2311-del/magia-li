@@ -155,3 +155,19 @@ test('טבלת היישובים: שניר 12% בכל השנים, והתקרות 
   assert.ok(SETTLEMENTS[2020]['קריית שמונה'].from, 'קריית שמונה 2020 השתנה ב-1.7');
   for (const y of [2020, 2021, 2022, 2023, 2024, 2025]) assert.ok(Object.keys(SETTLEMENTS[y]).length > 470);
 });
+
+test('נקודות ילדים לאב: תואם לטופסי 106 אמיתיים 2024 ו-2025', () => {
+  const r24 = computeYear(2024, { people: [person({ flags: { kids: { ages: [2], column: 'father' } } })] });
+  assert.equal(r24.results[0].lines.points, 6.75);
+  const r25 = computeYear(2025, { people: [person({ flags: { kids: { ages: [3, 0], column: 'father' } } })] });
+  assert.equal(r25.results[0].lines.points, 8.25);
+  const r22 = computeYear(2022, { people: [person({ flags: { kids: { ages: [0], column: 'father' } } })] });
+  assert.equal(r22.results[0].lines.points, 3.75);
+});
+
+test('נקודות ילדים: גיל 6–12 ב-2022 חסום, 2021 חסום, ילדים שלא גרים איתך = רו"ח', () => {
+  assert.equal(computeYear(2022, { people: [person({ flags: { kids: { ages: [8], column: 'mother' } } })] }).status, 'blocked');
+  assert.equal(computeYear(2021, { people: [person({ flags: { kids: { ages: [1], column: 'father' } } })] }).status, 'blocked');
+  assert.equal(computeYear(2024, { people: [person({ flags: { kids: { ages: [2], notWithMe: true } } })] }).status, 'cpa');
+  assert.equal(computeYear(2024, { people: [person({ gender: 'f', flags: { kids: { ages: [8], column: 'mother' } } })] }).results[0].lines.points, 4.75);
+});
