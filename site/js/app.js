@@ -197,11 +197,12 @@ function docsState(base, year) {
   for (const c of s.certs) if (c.kind !== 'miluim' && !(s.btlAnnual?.benefits || []).some((b) => b.kind === c.kind)) {
     btl.push({ kind: c.kind || 'other', label: BTL_LABELS[c.kind] || 'תשלום מביטוח לאומי', gross: c.gross, taxWithheld: c.tax, source: c.fileName });
   }
-  if (needsResidency(base, year) && !s.residency) need.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב');
-  // אישור ניהול החשבון הוא רק צרופה להגשה: הוא מופיע ברשימה, אבל לא עוצר את החישוב ואת המדריך.
-  const later = needsBank(base) && !s.bankProof ? ['אישור ניהול חשבון מהבנק (צריך אותו רק כצרופה בהגשה, כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח)'] : [];
+  // אישור ניהול החשבון ואישור התושבות הם רק צרופות להגשה: הם מופיעים ברשימה נפרדת, ולא עוצרים את החישוב ואת המדריך.
+  const later = [];
+  if (needsBank(base) && !s.bankProof) later.push('אישור ניהול חשבון מהבנק (כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח)');
+  if (needsResidency(base, year) && !s.residency) later.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב');
   for (const e of s.employers) if (e.income == null) need.push(`לא הצלחנו לקרוא את ההכנסה בקובץ "${e.source}". נסו את טופס ה-106 מרשות המסים (נספח ב').`);
-  return { s, need: [...need, ...later], btl, complete: need.length === 0, partial: partialFrom(s, base, year) };
+  return { s, need, later, btl, complete: need.length === 0, partial: partialFrom(s, base, year) };
 }
 
 // כשחסרים מסמכים: מה עדיין אפשר לחשב, מה לא נכלל ולאיזה כיוון זה יכול לשנות, ומה חוסם לגמרי.
@@ -276,24 +277,27 @@ function renderPersonDocs(q, base, who, year) {
     <label class="drop"><input type="file" accept="application/pdf,.pdf" multiple data-upload="${base}" data-upyear="${year}">
       <b>בחירת קבצי PDF</b><span class="small muted">אפשר לבחור כמה קבצים ביחד, ולהוסיף עוד אחר כך</span></label>`;
   if (state.ui.reading === base) html += '<div class="notice info">קורא את הקבצים…</div>';
+  // קובץ שלא זוהה. "טופס 106 ישן" נחשב כאן לא מזוהה רק כשלא חסר אף טופס 106, כי אז כנראה זה מסמך אחר (למשל מהבנק).
+  const missing106 = summarizeDocs(docs, year).missing.length > 0;
+  const isUnk = (d) => ['unknown', 'scanned'].includes(d.type) || (d.type === 'legacy106' && !missing106);
   if (docs.length) {
     html += `<table class="files">${docs.map((d, i) => {
       const ok = !['unknown', 'scanned', 'legacy106', 'error'].includes(d.type) && (!d.year || d.year === year);
       const what = d.type === 'error' ? 'לא הצלחנו לפתוח את הקובץ' : (DOC_TYPES[d.type] || d.type) + (d.year ? `, ${d.year}` : '') + (d.employer?.name ? `, ${d.employer.name}` : '');
       const better = ok ? suggestName(d, year, who) : null;
       const rename = better && better !== d.fileName ? `<div class="small">שם מומלץ: <bdi>${esc(better)}</bdi> <button class="btn link" type="button" data-saveas="${base}|${i}">שמירת עותק בשם הזה</button></div>` : '';
-      const unk = ['unknown', 'scanned'].includes(d.type);
+      const unk = isUnk(d);
       const tag = (needsResidency(base, year) && unk ? `<div class="small"><button class="btn link" type="button" data-residency="${base}|${i}">זה אישור התושבות מהמועצה</button></div>` : '')
         + (needsBank(base) && unk ? `<div class="small"><button class="btn link" type="button" data-bank="${base}|${i}">זה אישור ניהול החשבון מהבנק</button></div>` : '');
       return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div>${rename}${tag}</td><td class="actions"><button class="btn link" type="button" data-view="${base}|${i}">צפייה</button> <button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
     }).join('')}</table>`;
   }
-  const { s, need, btl, complete } = docsState(base, year);
+  const { s, need, later, btl, complete } = docsState(base, year);
   set(`${base}.docsOk`, complete ? 'yes' : '');
   // קובץ שלא זיהינו אבל אולי הוא אישור מהבנק או מהמועצה (כל אחד נראה אחרת): בלי אזהרה, רק שאלה ליד הקובץ.
   const canTag = needsBank(base) || needsResidency(base, year);
-  const bad = docs.filter((d) => ['legacy106', 'error'].includes(d.type) || (!canTag && ['unknown', 'scanned'].includes(d.type)));
-  const askTag = canTag ? docs.filter((d) => ['unknown', 'scanned'].includes(d.type)) : [];
+  const bad = docs.filter((d) => d.type === 'error' || (!(canTag && isUnk(d)) && ['unknown', 'scanned', 'legacy106'].includes(d.type)));
+  const askTag = canTag ? docs.filter(isUnk) : [];
   if (askTag.length) html += `<div class="notice info">לא זיהינו לבד את ${askTag.map((d) => `"${esc(d.fileName)}"`).join(', ')}. כל בנק ומועצה מוציאים את האישור בצורה אחרת, אז אם זה האישור מהבנק או מהמועצה, לוחצים על הכפתור ליד הקובץ ברשימה למעלה.</div>`;
   if (bad.length) html += `<div class="notice warn">לא הצלחנו לקרוא: ${bad.map((d) => `"${esc(d.fileName)}"`).join(', ')}. טפסים סרוקים, או טפסים ישנים שהמעסיק שלח, לפעמים לא נקראים. במקומם מורידים את טופס ה-106 מהאזור האישי ברשות המסים (נספח ב'), כמו בהסבר למעלה.</div>`;
   if (s.issues.length) html += `<div class="notice warn">${s.issues.map(esc).join('<br>')}</div>`;
@@ -311,6 +315,7 @@ function renderPersonDocs(q, base, who, year) {
     if (!complete) html += q.choice(`${base}.partialOk`, 'אין לך עכשיו את כל המסמכים?', [['yes', 'להמשיך בלי, ולקבל הערכה חלקית']],
       'נחשב רק לפי מה שהועלה, בלי לנחש את החסר. בתוצאה תופיע כוכבית עם מה שלא נכלל, ורשימה של המסמכים שחסרים. אפשר לחזור ולהעלות אותם מתי שרוצים.');
   }
+  if (later.length) html += `<div class="notice info"><b>לצרף בהגשה</b> (לא עוצר את החישוב ואת המדריך. אפשר להעלות לכאן, או פשוט לצרף אותם באתר של רשות המסים):<ul>${later.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
   if (complete) html += `<div class="notice info small">✓ כל המסמכים שצריך לחישוב הועלו. אם משהו בטבלה נראה לך לא נכון: <button class="btn link" type="button" data-mode="${base}|manual">תיקון ידני של המספרים</button></div>`;
   html += `<p class="small"><button class="btn link" type="button" data-mode="${base}|manual">אין לי את הקבצים, אני רוצה להקליד ידנית</button></p>`;
   return html;
@@ -574,6 +579,7 @@ function partialNotice(r) {
       ? `<div class="notice warn"><b>* הערכה חלקית, והתוצאה עוד יכולה להשתנות לשני הכיוונים.</b> לא נכללו בחישוב:<ul>${li}</ul>לא ניחשנו את מה שחסר. מה שמסומן "לשני הכיוונים" יכול גם להגדיל את ההחזר וגם להקטין אותו, ואפילו להפוך אותו לחוב. <b>לא מחליטים אם להגיש לפני שמשלימים את המסמכים.</b></div>`
       : `<div class="notice info"><b>* הערכה חלקית.</b> לא נכללו בחישוב:<ul>${li}</ul>לא ניחשנו את מה שחסר. כל אחד מהפריטים האלה יכול רק להגדיל את ההחזר (או להקטין את החוב), לכן התוצאה בפועל תהיה לפחות טובה כמו ההערכה.</div>`;
   }
+  if (r.filingDocs?.length) html += `<div class="notice info"><b>לצרף בהגשה ל-${r.year}</b> (לא משנה את החישוב):<ul>${r.filingDocs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul></div>`;
   if (r.missingDocs?.length) html += `<div class="notice warn"><b>מסמכים שחסרים לנו ל-${r.year}:</b><ul>${r.missingDocs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>${r.status === 'refund' ? `<button class="btn link" type="button" data-edit="${r.year}">להעלאת המסמכים ל-${r.year}</button>` : ''}</div>`;
   return html;
 }
@@ -651,10 +657,11 @@ function renderResults() {
 // כי השדות ב-1301 מגיעים מהמסמכים ומהתשובות. את התוצאה בודקים בכפתור "חישוב" באתר, לפני השידור.
 function docsCompleteFor(year) {
   const c = caseFor(year);
-  return c.people.every((p) => get(`years.${year}.${p.role}.mode`) === 'manual' || get(`years.${year}.${p.role}.docsOk`) === 'yes')
+  return c.people.every((p) => get(`years.${year}.${p.role}.mode`) === 'manual' || docsState(`years.${year}.${p.role}`, year).complete)
     && !resultFor(year).blocks.some((b) => /חסר|מסמך|אישור/.test(b))
     && !(resultFor(year).excluded || []).some((e) => e.kind === 'doc');
 }
+// מחשבים כאן מהקבצים עצמם (ולא מסימון שנשמר במסך המסמכים), כדי שגם אחרי רענון הדף המדריך ייפתח.
 // מדריך מילוי רק כשכל המסמכים הועלו: השדות במדריך מגיעים מהמסמכים, ובלעדיהם הם לא נכונים.
 const guideable = (r) => ['refund', 'zero', 'debt', 'cpa', 'blocked'].includes(r.status) && docsCompleteFor(r.year);
 

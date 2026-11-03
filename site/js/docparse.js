@@ -126,12 +126,15 @@ export function parseDocument(rawLines) {
   let all = L.map((l) => l.c).join('\n');
   const latin = (all.match(/[À-ÿ]/g) || []).length;
   if (!HEB.test(all) && latin > 30) {
-    L = prep(decodeLegacy(rawLines));
-    all = L.map((l) => l.c).join('\n');
-    if (!/במקוםטופס106|תעודהעל-?פיתקנותמסהכנסה/.test(all)) return { type: 'legacy106' };
-    const d = parseDocument(decodeLegacy(rawLines));
+    // גם מסמכים אחרים (למשל אישור מהבנק שהודפס מהאתר) מגיעים לפעמים בקידוד כזה. מזהים אותם אחרי ההמרה,
+    // ו"טופס 106 ישן" רק כשבאמת יש בו מילים של טופס שכר.
+    const dec = decodeLegacy(rawLines);
+    all = prep(dec).map((l) => l.c).join('\n');
+    if (!HEB.test(all)) return { type: 'unknown' };
+    const d = parseDocument(dec);
     if (d.fields) delete d.fields.creditPoints; // השבר העשרוני לא נקרא נכון בקידוד הישן
-    return d;
+    if (d.type !== 'unknown') return d;
+    return { type: /מעביד|מעסיק|משכורת|ניכויים/.test(all) ? 'legacy106' : 'unknown' };
   }
   if (!all.trim()) return { type: 'scanned' };
 
@@ -173,7 +176,8 @@ export function parseDocument(rawLines) {
   }
   if (/אישורתושב|1312א|1312/.test(all)) return { type: 'residency' };
   // כל בנק קורא לו אחרת: "אישור ניהול חשבון", "אישור על ניהול חשבון", "אישור בעלות בחשבון".
-  if (/ניהולחשבון|בעלותבחשבון|בעלותעלחשבון|בעלותחשבון/.test(all)) return { type: 'bankProof' };
+  // יש קבצים שהטקסט שלהם יוצא הפוך (משמאל לימין), ולכן בודקים גם את הצורה ההפוכה.
+  if (/ניהולחשבון|בעלותבחשבון|בעלותעלחשבון|בעלותחשבון|ןובשחלוהינ|ןובשחבתולעב|ןובשחלעתולעב/.test(all)) return { type: 'bankProof' };
   // אישור שהמועצה מילאה: לפעמים רק הנתונים הם טקסט, והטופס עצמו תמונת רקע. מזהים לפי שם הרשות ותאריך.
   if (/מועצהאזורית|מועצהמקומית|עיריית|עירייה|ועדמקומי/.test(all) && /\d{2}\/\d{2}\/\d{4}/.test(all)) return { type: 'residency' };
   return { type: 'unknown' };

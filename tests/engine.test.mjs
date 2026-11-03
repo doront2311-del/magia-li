@@ -110,7 +110,8 @@ test('מסמך לצירוף בלבד נכנס לרשימת המסמכים בלי
   c.people[0].filingDocs = ['אישור תושבות'];
   const r = computeYear(2020, c);
   assert.equal(r.partial, false);
-  assert.deepEqual(r.missingDocs, ['אישור תושבות']);
+  assert.deepEqual(r.missingDocs, []);
+  assert.deepEqual(r.filingDocs, ['אישור תושבות']);
 });
 
 test('הטבת יישוב בתלוש בלי מגורים בפועל = הפניה לרו"ח', () => {
