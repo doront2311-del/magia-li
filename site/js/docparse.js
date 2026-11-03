@@ -13,6 +13,8 @@ export const DOC_TYPES = {
   btlAnnual: 'ריכוז תשלומים שנתי (ביטוח לאומי)',
   btlMiluim: 'אישור שנתי למס הכנסה על תגמולי מילואים (ביטוח לאומי)',
   btlTaxCert: 'אישור שנתי למס הכנסה (ביטוח לאומי)',
+  btlUnemployment: 'אישור תשלומי אבטלה שנתי (ביטוח לאומי, נושא "אבטלה")',
+  bankProof: 'אישור ניהול חשבון (מהבנק)',
   legacy106: 'מסמך בקידוד ישן שאי אפשר לקרוא',
   scanned: 'מסמך סרוק (תמונה)',
   residency: 'אישור תושבות (טופס 1312א, מהמועצה או העירייה)',
@@ -153,6 +155,11 @@ export function parseDocument(rawLines) {
     const kind = /מילואים/.test(all) ? 'miluim' : /אבטלה/.test(all) ? 'unemployment' : /לידה|אמהות/.test(all) ? 'maternity' : /פגיעה/.test(all) ? 'injury' : null;
     return { type: kind === 'miluim' ? 'btlMiluim' : 'btlTaxCert', kind, year, gross: gross ? toNum(gross[1]) : null, tax: tax ? toNum(tax[1]) : null, idTail: idTail(L) };
   }
+  // ביטוח לאומי ← אישורים ← נושא "אבטלה" ← "אישור תשלומי אבטלה שנתי": טבלה לפי חודשים, עם עמודת "מס הכנסה".
+  if (/אישורתשלומיאבטלהלשנת|תשלומיקצבתאבטלהבשנת/.test(all)) {
+    const year = yearAfter(all, 'אישורתשלומיאבטלהלשנת') || yearAfter(all, 'קצבתאבטלהבשנת');
+    return { type: 'btlUnemployment', kind: 'unemployment', year, ...unemploymentTable(rawLines), idTail: idTail(L) };
+  }
   if (/ריכוזתשלומיםשנתי/.test(all)) {
     const m = all.match(/ריכוזתשלומיםשנתי-?(\d{4})/);
     const benefits = [];
@@ -165,9 +172,39 @@ export function parseDocument(rawLines) {
     return { type: 'btlAnnual', year: m ? Number(m[1]) : null, benefits, idTail: idTail(L) };
   }
   if (/אישורתושב|1312א|1312/.test(all)) return { type: 'residency' };
+  if (/ניהולחשבון/.test(all)) return { type: 'bankProof' };
   // אישור שהמועצה מילאה: לפעמים רק הנתונים הם טקסט, והטופס עצמו תמונת רקע. מזהים לפי שם הרשות ותאריך.
   if (/מועצהאזורית|מועצהמקומית|עיריית|עירייה|ועדמקומי/.test(all) && /\d{2}\/\d{2}\/\d{4}/.test(all)) return { type: 'residency' };
   return { type: 'unknown' };
+}
+
+// טבלת אישור תשלומי אבטלה: בחלק מהשורות יש תאים ריקים, ולכן משייכים כל סכום לכותרת העמודה הקרובה אליו.
+// בלי מיקומים (pos) אי אפשר לדעת איזה סכום הוא המס, ואז tax = null (כלומר חסר, לא אפס).
+function unemploymentTable(rawLines) {
+  const center = (p) => (p.x + p.r) / 2;
+  const isRow = (l) => l.some((s) => /^\d{2}\/\d{4}$/.test(s)) && l.some((s) => /אבטלה/.test(s));
+  const first = rawLines.findIndex(isRow);
+  if (first < 0 || rawLines.some((l) => !l.pos)) return { gross: null, tax: null };
+  const heads = [];
+  for (const l of rawLines.slice(Math.max(0, first - 8), first)) {
+    l.forEach((s, i) => { if (!/\d/.test(s)) heads.push({ s: compact(s), c: center(l.pos[i]) }); });
+  }
+  const col = (re) => heads.filter((h) => re.test(h.s)).map((h) => h.c);
+  const taxCols = col(/^הכנסה$|^מס$/), grossCols = col(/^ברוטו$/);
+  if (!taxCols.length || !grossCols.length) return { gross: null, tax: null };
+  let gross = 0, tax = 0;
+  for (const l of rawLines.filter(isRow)) {
+    l.forEach((s, i) => {
+      if (!NUM.test(s) || /\//.test(s)) return;
+      const c = center(l.pos[i]);
+      // כותרות של שתי שורות ("תשלום" מעל "ברוטו") נמצאות באותו מקום, ולכן משווים מרחקים עם מרווח קטן.
+      const dist = (cols) => Math.min(...cols.map((x) => Math.abs(x - c)));
+      const best = dist(heads.map((h) => h.c));
+      if (dist(taxCols) <= best + 3) tax += toNum(s);
+      else if (dist(grossCols) <= best + 3) gross += toNum(s);
+    });
+  }
+  return { gross, tax };
 }
 
 // מסכם את כל המסמכים של אדם אחד בשנה אחת: מה נמצא, מה חסר, ואילו ערכים להזין למנוע.
@@ -213,9 +250,10 @@ export function summarizeDocs(docs, year) {
     }
   }
   const btlAnnual = forYear.find((d) => d.type === 'btlAnnual') || null;
-  const certs = forYear.filter((d) => d.type === 'btlMiluim' || d.type === 'btlTaxCert');
+  const certs = forYear.filter((d) => ['btlMiluim', 'btlTaxCert', 'btlUnemployment'].includes(d.type));
   const legacy = forYear.filter((d) => d.type === 'legacy106' || d.type === 'scanned');
   const unknown = forYear.filter((d) => d.type === 'unknown');
   const residency = docs.find((d) => d.type === 'residency') || null;
-  return { residency, summary, forms, expected, missing, employers, btlAnnual, certs, legacy, unknown, issues };
+  const bankProof = docs.find((d) => d.type === 'bankProof') || null;
+  return { residency, bankProof, summary, forms, expected, missing, employers, btlAnnual, certs, legacy, unknown, issues };
 }

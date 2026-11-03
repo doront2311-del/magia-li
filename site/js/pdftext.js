@@ -16,11 +16,15 @@ export function linesFromItems(items) {
     let prev = null;
     for (const it of row) {
       const gap = prev ? prev.x - (it.x + it.w) : Infinity;
-      if (prev && gap < it.h * 0.25 && it.s.length <= 2 && prev.s.length <= 2) words[words.length - 1] += it.s;
-      else words.push(it.s);
+      if (prev && gap < it.h * 0.25 && it.s.length <= 2 && prev.s.length <= 2) { const w = words[words.length - 1]; w.s += it.s; w.x = it.x; }
+      else words.push({ s: it.s, x: it.x, r: it.x + it.w });
       prev = it;
     }
-    out.push(words.map((w) => w.trim()).filter(Boolean));
+    const kept = words.map((w) => ({ ...w, s: w.s.trim() })).filter((w) => w.s);
+    // המיקום האופקי של כל מילה (x = קצה שמאלי, r = קצה ימני), לטבלאות שבהן תאים ריקים (למשל אישור תשלומי אבטלה).
+    const line = kept.map((w) => w.s);
+    line.pos = kept.map((w) => ({ x: w.x, r: w.r }));
+    out.push(line);
   }
   return out;
 }

@@ -146,11 +146,29 @@ const HOWTO_SUMMARY = `<details class="howto" open><summary>איך מורידי�
     (א) לוחצים על הקישור <b>"למסמך ריכוז הכנסות"</b> (ליד הכותרת): קובץ אחד, הרשימה של כל מי ששילם לך משכורת באותה שנה.<br>
     (ב) ליד כל מעסיק ברשימה לוחצים <b>"להצגת טופס 106"</b> ושומרים את הקובץ: אחד לכל מעסיק.<br>
     <span class="small muted">הטעות הנפוצה: להוריד רק את ה-106 ולשכוח את הריכוז. בלי הריכוז אין לנו דרך לדעת שלא חסר מעסיק.</span></li></ol></details>`;
-const HOWTO_BTL = `<details class="howto" open><summary>איך מורידים מביטוח לאומי</summary><ol>
+// באתר ביטוח לאומי, בתפריט "אישורים", כל אישור נמצא תחת "נושא", ויש כמה אישורים עם שמות דומים.
+// לכן תמיד כותבים קודם את הנושא ואחר כך את השם המדויק (לפי צילומי מסך מ-3.11.2026).
+const BTL_DOCS = {
+  annual: 'בנושא "כללי": "אישור תשלומים שנתי"',
+  miluim: 'בנושא "מילואים": "אישור שנתי למס הכנסה על תשלום תגמולי מילואים"',
+  unemployment: 'בנושא "אבטלה": "אישור תשלומי אבטלה שנתי"',
+  maternity: 'בנושא של דמי הלידה: האישור השנתי על התשלומים והמס שנוכה (את המסך הזה עוד לא ראינו, אז מחפשים לפי הנושא)',
+  injury: 'בנושא של פגיעה בעבודה: האישור השנתי על התשלומים והמס שנוכה (את המסך הזה עוד לא ראינו, אז מחפשים לפי הנושא)',
+};
+const btlDoc = (kind, year) => `ביטוח לאומי ← "אישורים" ← ${BTL_DOCS[kind] || 'אישור שנתי על התשלום'}, לשנת ${year}`;
+const miluimNeeded = (base) => ['yes', 'unsure'].includes(get(`${base}.miluimDirect`));
+const needsBank = (base) => base.endsWith('.self') && get('me.prevRefund') !== 'yes';
+const howtoBtl = (base, year) => `<details class="howto" open><summary>איך מורידים מביטוח לאומי</summary><ol>
   <li><b>כניסה:</b> <a class="btn small-btn" href="${BTL_LOGIN}" target="_blank" rel="noopener">פתיחת האזור האישי בביטוח לאומי ←</a> ואז בתפריט <b>"אישורים"</b>.</li>
-  <li>תחת "אישורים" מורידים <b>"אישור תשלומים שנתי"</b> לשנה. מורידים אותו תמיד, גם אם לא קיבלת כלום.</li>
-  <li>באותו מקום מחפשים גם <b>"אישור שנתי למס הכנסה"</b> לשנה. אם הוא לא מופיע ברשימה, לא צריך אותו.</li>
-  <li>עשית מילואים ושולם לך ישירות מביטוח לאומי? מחפשים גם <b>"אישור שנתי למס הכנסה על תשלום תגמולי מילואים"</b>.</li></ol></details>`;
+  <li>בטבלת האישורים העמודה הראשונה מימין היא <b>"נושא"</b>. לכמה אישורים יש שמות כמעט זהים, אז מוצאים קודם את הנושא, ורק אז את שם האישור. את השנה בוחרים בעמודה "תקופה".</li>
+  <li>נושא <b>"כללי"</b> ← <b>"אישור תשלומים שנתי"</b> לשנת ${year}. מורידים אותו תמיד, גם אם לא קיבלת כלום.</li>
+  <li>אם באישור הזה מופיעה אבטלה: נושא <b>"אבטלה"</b> ← <b>"אישור תשלומי אבטלה שנתי"</b> לשנת ${year}. בו רואים כמה מס הכנסה נוכה. (באותו נושא יש גם "אישור שנתי למס הכנסה", אבל אין בו בחירת שנה.)</li>
+  ${miluimNeeded(base) ? `<li>נושא <b>"מילואים"</b> ← <b>"אישור שנתי למס הכנסה על תשלום תגמולי מילואים"</b> לשנת ${year}.</li>` : ''}
+  <li><b>לא צריך:</b> נושא "גבייה" ← "אישור שנתי למס הכנסה". הוא על דמי הביטוח ששילמת, לא על כסף שקיבלת.</li>
+  <li><b>שמות הקבצים:</b> כמה אישורים יורדים באותו שם, למשל "אישור מס הכנסה לשנת ${year}" גם למילואים וגם לתשלומים אחרים. כדאי לשנות את השם מיד אחרי כל הורדה, למשל <bdi>${year}-ביטוח-לאומי-מילואים.pdf</bdi>. אחרי ההעלאה נכתוב ליד כל קובץ מה זיהינו בו.</li></ol></details>`;
+const HOWTO_BANK = `<details class="howto" open><summary>איך מורידים אישור ניהול חשבון</summary><ol>
+  <li>צריך אותו כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח. רשות המסים מעבירה את ההחזר רק לחשבון שעל שמך.</li>
+  <li>מורידים אותו מהאפליקציה או מהאתר של הבנק. בדרך כלל הוא נקרא "אישור ניהול חשבון" או "אישור על ניהול חשבון", ולוקח דקה.</li></ol></details>`;
 const NAMING_TIP = `<div class="notice info small"><b>טיפ:</b> חלק מהאתרים שומרים קבצים בשם של מספרים ואותיות (למשל <bdi dir="ltr">a8f3k29.pdf</bdi>). כשמורידים, כדאי לתת לכל קובץ שם ברור עם השנה ומה יש בו, ולשמור את כל הקבצים של שנה בתיקייה אחת. למשל:
   <bdi>2021-ריכוז-נתוני-שכר.pdf</bdi>, <bdi>2021-106-שם-המעסיק.pdf</bdi>, <bdi>2021-ביטוח-לאומי-אישור-תשלומים-שנתי.pdf</bdi>. אחרי ההעלאה נציע שם לכל קובץ שזיהינו, ואפשר לשמור עותק בשם הזה.</div>`;
 const BTL_LABELS = { miluim: 'תגמולי מילואים', unemployment: 'דמי אבטלה', maternity: 'דמי לידה', injury: 'דמי פגיעה בעבודה' };
@@ -165,20 +183,22 @@ function docsState(base, year) {
   const need = [];
   if (!s.summary) need.push('ריכוז הכנסות מכל המעסיקים (רשות המסים: הקישור "למסמך ריכוז הכנסות")');
   for (const e of s.missing) need.push(`טופס 106 של ${e.name} (תיק ניכויים ${e.taxFile})`);
-  if (!s.btlAnnual) need.push('אישור תשלומים שנתי (ביטוח לאומי)');
+  if (!s.btlAnnual) need.push(btlDoc('annual', year));
   const btl = [];
   for (const b of s.btlAnnual?.benefits || []) {
     const cert = s.certs.find((c) => c.kind === b.kind);
-    if (!cert) need.push(`אישור שנתי למס הכנסה על ${BTL_LABELS[b.kind]} (ביטוח לאומי)`);
-    btl.push({ kind: b.kind, label: BTL_LABELS[b.kind], gross: cert?.gross ?? b.gross, taxWithheld: cert ? cert.tax : null, source: cert?.fileName || s.btlAnnual.fileName });
+    if (!cert) need.push(`כמה מס נוכה מ${BTL_LABELS[b.kind]}: ${btlDoc(b.kind, year)}`);
+    else if (cert.tax == null) need.push(`לא הצלחנו לקרוא את המס שנוכה בקובץ "${cert.fileName}". בדקו שזה ${btlDoc(b.kind, year)}`);
+    btl.push({ kind: b.kind, label: BTL_LABELS[b.kind], gross: cert?.gross ?? b.gross, taxWithheld: cert ? cert.tax : null, doc: btlDoc(b.kind, year), source: cert?.fileName || s.btlAnnual.fileName });
   }
   const miluim = s.certs.find((c) => c.kind === 'miluim');
   if (miluim) btl.push({ kind: 'miluim', label: BTL_LABELS.miluim, gross: miluim.gross, taxWithheld: miluim.tax, source: miluim.fileName });
-  else if (get(`${base}.miluimDirect`) === 'yes') need.push('אישור שנתי למס הכנסה על תשלום תגמולי מילואים (ביטוח לאומי)');
+  else if (miluimNeeded(base)) need.push(btlDoc('miluim', year));
   for (const c of s.certs) if (c.kind !== 'miluim' && !(s.btlAnnual?.benefits || []).some((b) => b.kind === c.kind)) {
     btl.push({ kind: c.kind || 'other', label: BTL_LABELS[c.kind] || 'תשלום מביטוח לאומי', gross: c.gross, taxWithheld: c.tax, source: c.fileName });
   }
   if (needsResidency(base, year) && !s.residency) need.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב');
+  if (needsBank(base) && !s.bankProof) need.push('אישור ניהול חשבון מהבנק (כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח)');
   for (const e of s.employers) if (e.income == null) need.push(`לא הצלחנו לקרוא את ההכנסה בקובץ "${e.source}". נסו את טופס ה-106 מרשות המסים (נספח ב').`);
   return { s, need, btl, complete: need.length === 0, partial: partialFrom(s, base, year) };
 }
@@ -213,10 +233,11 @@ function partialFrom(s, base, year) {
       }
     }
   }
-  if (!s.btlAnnual) excluded.push({ label: 'תשלומים מביטוח לאומי (אבטלה, דמי לידה, מילואים ועוד), אם היו', effect: 'either', doc: 'אישור תשלומים שנתי (ביטוח לאומי, תפריט "אישורים")', kind: 'doc' });
-  if (!s.certs.some((c) => c.kind === 'miluim') && get(`${base}.miluimDirect`) === 'yes') {
-    excluded.push({ label: 'תגמולי מילואים ששולמו ישירות מביטוח לאומי (גם ההכנסה וגם המס שנוכה)', effect: 'either', doc: 'אישור שנתי למס הכנסה על תשלום תגמולי מילואים (ביטוח לאומי)', kind: 'doc' });
+  if (!s.btlAnnual) excluded.push({ label: 'תשלומים מביטוח לאומי (אבטלה, דמי לידה, מילואים ועוד), אם היו', effect: 'either', doc: btlDoc('annual', year), kind: 'doc' });
+  if (!s.certs.some((c) => c.kind === 'miluim') && miluimNeeded(base)) {
+    excluded.push({ label: 'תגמולי מילואים ששולמו ישירות מביטוח לאומי, אם היו (גם ההכנסה וגם המס שנוכה)', effect: 'either', doc: btlDoc('miluim', year), kind: 'doc' });
   }
+  if (needsBank(base) && !s.bankProof) filingDocs.push('אישור ניהול חשבון מהבנק. צריך לצרף אותו, כי ענית שלא קיבלת בעבר החזר לחשבון הזה (או שאתה לא בטוח)');
   if (needsResidency(base, year) && !s.residency) filingDocs.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב. צריך לצרף אותו כשמבקשים את הטבת היישוב');
   return { blocks, excluded, filingDocs, adjust };
 }
@@ -229,14 +250,15 @@ function checklist(base, year, who) {
   const tax = [[`"למסמך ריכוז הכנסות" ${year} (ריכוז נתוני שכר)`, !!s.summary]];
   if (s.summary) for (const e of s.expected) tax.push([`"להצגת טופס 106" של ${e.name}`, !s.missing.some((m) => m.taxFile === e.taxFile)]);
   else tax.push([`"להצגת טופס 106" ליד כל מעסיק (אחרי שתעלה את הריכוז נראה כאן את כולם)`, docs.some((d) => d.type === '106')]);
-  const bl = [[`"אישור תשלומים שנתי" ${year}`, !!s.btlAnnual]];
-  for (const b of s.btlAnnual?.benefits || []) bl.push([`"אישור שנתי למס הכנסה" על ${BTL_LABELS[b.kind]}`, btl.some((x) => x.kind === b.kind && x.taxWithheld != null)]);
-  if (get(`${base}.miluimDirect`) === 'yes') bl.push(['"אישור שנתי למס הכנסה על תשלום תגמולי מילואים"', s.certs.some((c) => c.kind === 'miluim')]);
+  const bl = [[`${BTL_DOCS.annual} ${year}`, !!s.btlAnnual]];
+  for (const b of s.btlAnnual?.benefits || []) bl.push([`${BTL_DOCS[b.kind] || BTL_LABELS[b.kind]} ${year}`, btl.some((x) => x.kind === b.kind && x.taxWithheld != null)]);
+  if (miluimNeeded(base)) bl.push([`${BTL_DOCS.miluim} ${year}`, s.certs.some((c) => c.kind === 'miluim')]);
+  const bank = needsBank(base) ? `<tr><td colspan="2" class="small muted">מהבנק (כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח)</td></tr><tr><td>${mark(!!s.bankProof)}</td><td><b>"אישור ניהול חשבון"</b></td></tr>` : '';
   const res = needsResidency(base, year) ? `<tr><td colspan="2" class="small muted">מהמועצה האזורית או מהעירייה (כי ענית שגרת ביישוב מזכה)</td></tr><tr><td>${mark(!!s.residency)}</td><td><b>"אישור תושבות" (טופס 1312א) לשנת ${year}</b></td></tr>` : '';
   const rows = (list) => list.map(([n, ok]) => `<tr><td>${mark(ok)}</td><td><b>${esc(n)}</b></td></tr>`).join('');
   return `<div class="card sub checklist"><b>מה צריך להוריד ${who === 'spouse' ? 'לבן/בת הזוג' : ''} לשנת ${year}</b>
     <table class="files"><tr><td colspan="2" class="small muted">מרשות המסים (האזור האישי ← "טפסי 106" ← "מידע מרוכז מהמעסיקים")</td></tr>${rows(tax)}
-    <tr><td colspan="2" class="small muted">מביטוח לאומי (האזור האישי ← "אישורים")</td></tr>${rows(bl)}${res}</table>
+    <tr><td colspan="2" class="small muted">מביטוח לאומי (האזור האישי ← "אישורים")</td></tr>${rows(bl)}${res}${bank}</table>
     <div class="small muted">הרשימה מתעדכנת לבד אחרי שמעלים קבצים.</div></div>`;
 }
 
@@ -246,10 +268,10 @@ function renderPersonDocs(q, base, who, year) {
   const docs = get(`${base}.docs`) || [];
   let html = `<h3>מסמכים ${pron} לשנת ${year}</h3>
     <p>מעלים את הקבצים, והאפליקציה ממלאת את המספרים לבד. הקבצים נקראים בתוך הדפדפן ולא יוצאים מהמחשב.</p>
+    ${q.choice(`${base}.miluimDirect`, `עשית${who === 'spouse' ? ' (בן/בת הזוג)' : ''} מילואים בשנת ${year} ושולם ${who === 'spouse' ? 'לו/לה' : 'לך'} ישירות מביטוח לאומי (לא דרך המשכורת)?`, [['yes', 'כן'], ['no', 'לא'], ['unsure', 'לא בטוח/ה']], 'אם התגמול הגיע עם המשכורת, הוא כבר בטופס 106. אם הוא נכנס לבנק מביטוח לאומי, או שאתה לא בטוח, צריך גם את האישור השנתי על תגמולי מילואים. התשובה כאן מעדכנת את רשימת המסמכים למטה.')}
     <div class="notice info"><b>לפני שנכנסים לאתרים: עוברים על ההסבר כאן למטה.</b> יש בהם הכפתורים שמובילים בדיוק למקום הנכון באתרים, ואת השמות המדויקים של הקבצים.</div>
     ${checklist(base, year, who)}
-    ${HOWTO_SUMMARY}${HOWTO_BTL}${NAMING_TIP}
-    ${q.yn(`${base}.miluimDirect`, `עשית${who === 'spouse' ? ' (בן/בת הזוג)' : ''} מילואים בשנת ${year} ושולם ${who === 'spouse' ? 'לו/לה' : 'לך'} ישירות מביטוח לאומי (לא דרך המשכורת)?`, 'אם התגמול הגיע עם המשכורת, הוא כבר בטופס 106. אם הוא נכנס לבנק מביטוח לאומי, צריך את האישור השנתי על תגמולי מילואים.')}
+    ${HOWTO_SUMMARY}${howtoBtl(base, year)}${needsBank(base) ? HOWTO_BANK : ''}${NAMING_TIP}
     <label class="drop"><input type="file" accept="application/pdf,.pdf" multiple data-upload="${base}" data-upyear="${year}">
       <b>בחירת קבצי PDF</b><span class="small muted">אפשר לבחור כמה קבצים ביחד, ולהוסיף עוד אחר כך</span></label>`;
   if (state.ui.reading === base) html += '<div class="notice info">קורא את הקבצים…</div>';
@@ -259,7 +281,9 @@ function renderPersonDocs(q, base, who, year) {
       const what = d.type === 'error' ? 'לא הצלחנו לפתוח את הקובץ' : (DOC_TYPES[d.type] || d.type) + (d.year ? `, ${d.year}` : '') + (d.employer?.name ? `, ${d.employer.name}` : '');
       const better = ok ? suggestName(d, year, who) : null;
       const rename = better && better !== d.fileName ? `<div class="small">שם מומלץ: <bdi>${esc(better)}</bdi> <button class="btn link" type="button" data-saveas="${base}|${i}">שמירת עותק בשם הזה</button></div>` : '';
-      const tag = needsResidency(base, year) && ['unknown', 'scanned'].includes(d.type) ? `<div class="small"><button class="btn link" type="button" data-residency="${base}|${i}">זה אישור התושבות מהמועצה</button></div>` : '';
+      const unk = ['unknown', 'scanned'].includes(d.type);
+      const tag = (needsResidency(base, year) && unk ? `<div class="small"><button class="btn link" type="button" data-residency="${base}|${i}">זה אישור התושבות מהמועצה</button></div>` : '')
+        + (needsBank(base) && unk ? `<div class="small"><button class="btn link" type="button" data-bank="${base}|${i}">זה אישור ניהול החשבון מהבנק</button></div>` : '');
       return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div>${rename}${tag}</td><td class="actions"><button class="btn link" type="button" data-view="${base}|${i}">צפייה</button> <button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
     }).join('')}</table>`;
   }
@@ -422,7 +446,7 @@ function personFrom(base, gender, flags, year) {
     const { s, btl, partial } = docsState(base, year);
     const employers = s.employers.map((e) => ({ name: e.name, income: e.income, taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, insuredIncome: e.insuredIncome, settlementCode: e.settlementCode }));
     if (partial.adjust) employers.push(partial.adjust);
-    return { gender, flags, employers, btl: btl.map((b) => ({ label: b.label, gross: b.gross, taxWithheld: b.taxWithheld })), credits: {}, settlement: { employerGave: employers.reduce((t, e) => t + (e.settlementCode || 0), 0) },
+    return { gender, flags, employers, btl: btl.map((b) => ({ label: b.label, gross: b.gross, taxWithheld: b.taxWithheld, doc: b.doc })), credits: {}, settlement: { employerGave: employers.reduce((t, e) => t + (e.settlementCode || 0), 0) },
       blocks: partial.blocks, excluded: partial.excluded, filingDocs: partial.filingDocs };
   }
   const n = Number(get(`${base}.employersCount`)) || 0;
@@ -567,7 +591,7 @@ function renderResults() {
   const totalIdx = refunds.reduce((s, r) => s + (r.indexation || 0), 0);
   const anyPartial = refunds.some((r) => r.partial);
   let html = `<h1>התוצאה</h1>`;
-  if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ החזר צפוי ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}</div><div class="amount">${anyPartial ? 'לפחות ' : ''}${fmt(total)} ₪${anyPartial ? '<sup>*</sup>' : ''}</div><div>ועוד כ-${fmt(totalIdx)} ₪ הצמדה וריבית (הערכה)</div>${anyPartial ? `<div class="small">* הערכה חלקית ל-${refunds.filter((r) => r.partial).map((r) => r.year).join(', ')}: חלק מהנתונים חסרים ולא נכללו. הפירוט וההסבר בכל שנה למטה.</div>` : ''}${unsure.length ? `<div class="small">לא כולל את ${unsure.map((r) => r.year).join(', ')}, כי שם התוצאה עוד יכולה להשתנות לשני הכיוונים.</div>` : ''}</div>`;
+  if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ צפוי לחזור אליך ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}, כולל הצמדה וריבית</div><div class="amount">${anyPartial ? 'לפחות ' : 'כ-'}${fmt(total + totalIdx)} ₪${anyPartial ? '<sup>*</sup>' : ''}</div><div>החזר מס ${fmt(total)} ₪ + הצמדה וריבית כ-${fmt(totalIdx)} ₪ (הערכה עד היום. הסכום ממשיך לגדול עד יום התשלום)</div>${anyPartial ? `<div class="small">* הערכה חלקית ל-${refunds.filter((r) => r.partial).map((r) => r.year).join(', ')}: חלק מהנתונים חסרים ולא נכללו. הפירוט וההסבר בכל שנה למטה.</div>` : ''}${unsure.length ? `<div class="small">לא כולל את ${unsure.map((r) => r.year).join(', ')}, כי שם התוצאה עוד יכולה להשתנות לשני הכיוונים.</div>` : ''}</div>`;
   const forGuide = rs.filter(guideable);
   if (forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. השנים במסמך: ${forGuide.map((r) => r.year).join(', ')}.${forGuide.some((r) => r.status === 'blocked') ? ' בשנה שלא חושבה, בודקים את התוצאה בכפתור "חישוב" באתר לפני שמשדרים.' : ''}${forGuide.some((r) => ['zero', 'debt', 'cpa'].includes(r.status)) ? ' גם שנה שלא יוצא בה החזר נמצאת במסמך, כדי שתוכל להחליט בעצמך.' : ''} אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
   if (!forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך מסביר שלב-אחר-שלב מה לכתוב בכל שדה באתר של רשות המסים. הוא נוצר לכל שנה שכל המסמכים שלה הועלו. ${rs.some((r) => r.status === 'blocked' || r.missingDocs?.length) ? 'עוד חסרים מסמכים (הרשימה מופיעה בכל שנה למטה). אחרי שתעלה אותם בשלב "שנים ומסמכים", המסמך ייווצר.</p><button class="btn secondary" type="button" data-go="years">להשלמת המסמכים</button>' : 'כרגע אין שנה שכדאי להגיש לה.</p>'}</div>`;
@@ -578,8 +602,10 @@ function renderResults() {
     const rec = partialRec(r, baseRec);
     html += `<div class="card result ${r.status}"><h2 style="margin-top:0">${r.year}: ${title}${r.partial && r.status !== 'blocked' ? ' (הערכה חלקית)' : ''}</h2>`;
     if (r.balance != null && r.status !== 'blocked') {
-      html += `<div class="amount">${r.balance < 0 ? '−' : ''}${fmt(Math.abs(r.balance))} ₪${star(r)}</div>`;
-      if (r.indexation) html += `<div>ועוד כ-${fmt(r.indexation)} ₪ הצמדה וריבית עד היום (הערכה, הסכום ממשיך לגדול עד התשלום)</div>`;
+      if (r.indexation) {
+        html += `<div class="amount">${r.partial ? 'לפחות ' : 'כ-'}${fmt(r.balance + r.indexation)} ₪${star(r)}</div>`;
+        html += `<div>החזר מס ${fmt(r.balance)} ₪ + הצמדה וריבית כ-${fmt(r.indexation)} ₪ (הערכה עד היום. הסכום ממשיך לגדול עד יום התשלום)</div>`;
+      } else html += `<div class="amount">${r.balance < 0 ? '−' : ''}${fmt(Math.abs(r.balance))} ₪${star(r)}</div>`;
       const L = (k) => r.results.reduce((s, p) => s + p.lines[k], 0);
       html += `<table class="calc">
         <tr><td>סה"כ הכנסות<div class="muted small">משכורת ותשלומי ביטוח לאומי</div></td><td class="num">${fmt(L('totalIncome'))}</td></tr>
@@ -786,6 +812,12 @@ app.addEventListener('click', async (ev) => {
     const [base, i] = t.dataset.residency.split('|');
     const docs = get(`${base}.docs`) || [];
     if (docs[Number(i)]) docs[Number(i)] = { ...docs[Number(i)], type: 'residency', taggedByUser: true };
+    set(`${base}.docs`, docs); save(); render(); return;
+  }
+  if (t.dataset.bank) {
+    const [base, i] = t.dataset.bank.split('|');
+    const docs = get(`${base}.docs`) || [];
+    if (docs[Number(i)]) docs[Number(i)] = { ...docs[Number(i)], type: 'bankProof', taggedByUser: true };
     set(`${base}.docs`, docs); save(); render(); return;
   }
   if (t.dataset.rmdoc) {

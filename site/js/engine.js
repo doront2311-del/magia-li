@@ -83,7 +83,7 @@ export function computePerson(year, p) {
   }
   for (const btl of p.btl || []) {
     if (btl.taxWithheld === null || btl.taxWithheld === undefined || btl.taxWithheld === '') {
-      out.push(excluded(`המס שנוכה מ${btl.label || 'תשלום ביטוח לאומי'} (ההכנסה עצמה כן נכללה)`, 'up', `אישור שנתי למס הכנסה על ${btl.label || 'התשלום'} (ביטוח לאומי)`));
+      out.push(excluded(`המס שנוכה מ${btl.label || 'תשלום ביטוח לאומי'} (ההכנסה עצמה כן נכללה)`, 'up', btl.doc || `אישור שנתי למס הכנסה על ${btl.label || 'התשלום'} (ביטוח לאומי)`));
     }
   }
 
