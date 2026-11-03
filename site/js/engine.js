@@ -60,6 +60,7 @@ export function computePerson(year, p) {
       if (cp.missing) blocks.push(cp.missing); else kidPoints = cp.points;
     }
   }
+  for (const msg of p.flags?.stop || []) stops.push(msg);
   for (const r of neededRules(p)) {
     if (r === 'childrenPoints') continue; // נבדק למעלה לפי שנה וגיל
     if (r === 'dischargedSoldierCareer') { stops.push('שירות קבע מיד אחרי השירות הסדיר משנה את חישוב נקודות החייל המשוחרר, והמקורות לא מסכימים איך. מומלץ רואה חשבון לשנה הזו.'); continue; }
@@ -87,7 +88,10 @@ export function computePerson(year, p) {
   // חייל משוחרר: חלק יחסי לפי מספר החודשים בשנה הזו שבתוך 36 החודשים.
   const ds = p.flags?.dischargedSoldier;
   const soldierPoints = ds && ds.months > 0 ? (RULES.dischargedSoldierPoints.value[ds.level] || 0) * ds.months / 12 : 0;
-  const points = Math.round((RULES.residentPoints.value + (p.gender === 'f' ? RULES.womanExtraPoints.value : 0) + soldierPoints + kidPoints) * 100) / 100;
+  const f = p.flags || {};
+  const familyPoints = (f.degree ? RULES.degreePoints.value.ba : 0) + (f.singleParent ? RULES.singleParentPoints.value : 0)
+    + (f.alimony ? RULES.alimonyPoints.value : 0) + (f.spousePoints ? RULES.spousePoints.value : 0);
+  const points = Math.round((RULES.residentPoints.value + (p.gender === 'f' ? RULES.womanExtraPoints.value : 0) + soldierPoints + kidPoints + familyPoints) * 100) / 100;
   const pointsCredit = Math.round(points * yp.creditPointValue.value);
   // פנסיה (45א): 35% מההפקדה, עד 7% מההכנסה המזכה. ההכנסה המזכה = ההכנסה המבוטחת (244/245) או המשכורת, עד התקרה השנתית.
   let pensionCredit = 0;
@@ -100,14 +104,23 @@ export function computePerson(year, p) {
   let settlementCredit = 0;
   const st = p.settlement || {};
   if (st.livedMonths > 0 && st.rate > 0) settlementCredit = Math.round(st.rate / 100 * Math.min(totalIncome, st.ceiling * st.livedMonths / 12));
-  const credits = pointsCredit + pensionCredit + settlementCredit;
+  // תרומות (סעיף 46): 35%, רק אם סך התרומות בשנה לפחות המינימום. מוכר עד 30% מההכנסה החייבת ועד המקסימום.
+  let donationsCredit = 0;
+  const don = Number(p.credits?.donations) || 0;
+  if (don > 0) {
+    const dc = RULES.donationsCredit.value;
+    const mm = dc.byYear[year];
+    if (!mm) blocks.push(`זיכוי על תרומות: הסכום המינימלי והתקרה לשנת ${year} עוד לא אומתו`);
+    else if (don >= mm[0]) donationsCredit = Math.round(dc.rate * Math.min(don, dc.incomeShare * taxable, mm[1]));
+  }
+  const credits = pointsCredit + pensionCredit + settlementCredit + donationsCredit;
   const taxDue = Math.max(0, grossTax - credits);
   const withheld = sum(p.employers, 'taxWithheld') + sum(p.btl, 'taxWithheld'); // 042
   const balance = withheld - taxDue;
 
   return {
     blocks, stops,
-    lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, kidPoints, pointsCredit, pensionCredit, settlementCredit, credits, taxDue, withheld, balance },
+    lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, kidPoints, pointsCredit, pensionCredit, settlementCredit, donationsCredit, credits, taxDue, withheld, balance },
   };
 }
 
