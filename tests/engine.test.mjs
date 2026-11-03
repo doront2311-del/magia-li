@@ -110,7 +110,8 @@ test('מסמך לצירוף בלבד נכנס לרשימת המסמכים בלי
   c.people[0].filingDocs = ['אישור תושבות'];
   const r = computeYear(2020, c);
   assert.equal(r.partial, false);
-  assert.deepEqual(r.missingDocs, ['אישור תושבות']);
+  assert.deepEqual(r.missingDocs, []);
+  assert.deepEqual(r.filingDocs, ['אישור תושבות']);
 });
 
 test('הטבת יישוב בתלוש בלי מגורים בפועל = הפניה לרו"ח', () => {
@@ -262,4 +263,16 @@ test('תרומות: 35%, מינימום לכל שנה, עד 30% מההכנסה',
   assert.equal(d(2024, 150).results[0].lines.donationsCredit, 0); // מתחת למינימום 207
   assert.equal(d(2024, 100_000).results[0].lines.donationsCredit, Math.round(0.35 * 60_000));
   assert.equal(d(2025, 1_000).results[0].lines.donationsCredit, 350);
+});
+
+test('מדריך 1301: 331 לא נוגעים, ושכר דירה פטור מופיע עם הצהרה וצרופה', () => {
+  const g0 = buildGuide(2020, case2020, null);
+  const gen = g0.tabs.find((x) => x.title === 'פרטים כלליים').fields;
+  assert.equal(gen.find((f) => /^331/.test(f.field)).kind, 'skip');
+  const c = { ...case2020, answers: { ...(case2020.answers || {}), rentExempt: true, rentCeiling: 5_100 }, attachments: [{ doc: 'חוזה השכירות', why: 'כי קיבלת שכר דירה במסלול הפטור' }] };
+  const g = buildGuide(2020, c, null);
+  const inc = g.tabs.find((t) => t.title.startsWith('פירוט הכנסות')).fields;
+  assert.ok(inc.some((f) => f.kind === 'mark' && /שכר דירה/.test(f.field) && /5,100|5100/.test(f.source)));
+  const att = g.tabs.find((t) => t.title === 'צרופות והגשה').fields;
+  assert.ok(att.some((f) => f.value === 'חוזה השכירות'));
 });

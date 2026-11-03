@@ -166,18 +166,19 @@ export function computeYear(year, yearCase, today = new Date()) {
   const seen = new Set();
   const excl = results.flatMap((r) => r.excluded.map((e) => (r.role === 'spouse' ? { ...e, label: `בן/בת הזוג: ${e.label}` } : e)))
     .filter((e) => !seen.has(e.label) && seen.add(e.label));
-  // מסמכים שחסרים: כל מה שמשפיע על ההערכה, ועוד מסמכים שצריך רק לצירוף בהגשה (filingDocs).
-  const missingDocs = [...new Set([...excl.map((e) => e.doc), ...results.flatMap((r) => people.find((p) => p.role === r.role)?.filingDocs || [])].filter(Boolean))];
+  // missingDocs: מסמכים שמשפיעים על ההערכה. filingDocs: מסמכים שצריך רק לצרף בהגשה, והם לא עוצרים כלום.
+  const missingDocs = [...new Set(excl.map((e) => e.doc).filter(Boolean))];
+  const filingDocs = [...new Set(people.flatMap((p) => (p.filingDocs || []).map((d) => (p.role === 'spouse' ? `בן/בת הזוג: ${d}` : d))))];
   const partial = excl.length > 0;
   const direction = excl.some((e) => e.effect === 'either') ? 'either' : partial ? 'up' : null;
-  if (blocks.length) return { year, status: 'blocked', blocks, stops, results, excluded: excl, missingDocs, partial, direction };
+  if (blocks.length) return { year, status: 'blocked', blocks, stops, results, excluded: excl, missingDocs, filingDocs, partial, direction };
 
   const balance = results.reduce((s, r) => s + r.lines.balance, 0);
   const reasons = [...new Set(results.flatMap((r, i) => reasonsFor(people[i], r.lines)))];
   const indexation = estimateIndexation(balance, year, today);
   let status = balance > 0 ? 'refund' : balance < 0 ? 'debt' : 'zero';
   if (stops.length) status = 'cpa';
-  return { year, status, balance, indexation, reasons, blocks, stops, results, excluded: excl, missingDocs, partial, direction };
+  return { year, status, balance, indexation, reasons, blocks, stops, results, excluded: excl, missingDocs, filingDocs, partial, direction };
 }
 
 // טווח סכומים לאנליטיקס אנונימי. אף פעם לא שולחים סכום מדויק.

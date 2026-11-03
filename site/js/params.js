@@ -122,6 +122,17 @@ export const RULES = {
   },
 };
 
+// תקרת הפטור החודשית על שכר דירה למגורים (מסלול פטור). כל חודש שבו סך שכר הדירה מכל הדירות לא עובר
+// את התקרה פטור לגמרי. מעל התקרה יש פטור חלקי, וזה עוד לא נתמך. שנה בלי ערך = לא נתמכת.
+const KZ_RENT = 'כל זכות, "פטור ממס על הכנסה מהשכרת דירה למגורים", טבלת "גובה הפטור בשנים קודמות"';
+export const RENT_CEILING = {
+  2020: { value: 5_100, source: KZ_RENT },
+  2021: { value: 5_074, source: KZ_RENT },
+  2022: { value: 5_196, source: KZ_RENT },
+  2023: { value: 5_471, source: `${KZ_RENT} ; bshcpa.co.il "מיסוי הכנסות משכר דירה למגורים"` },
+  2024: { value: 5_654, source: `${KZ_RENT} ; bshcpa.co.il ; protocol.co.il` },
+};
+
 export const ALLOWED = new Set(['verified', 'crosschecked']);
 
 // אילו שנים פתוחות להגשה בתאריך נתון: שש שנים אחורה, עד השנה שהסתיימה.

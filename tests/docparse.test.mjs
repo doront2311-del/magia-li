@@ -135,3 +135,18 @@ test('אישור ניהול חשבון מזוהה', () => {
   assert.equal(parseDocument([['בנק', 'לאומי'], ['אישור', 'על', 'ניהול', 'חשבון']]).type, 'bankProof');
   assert.equal(parseDocument([['אישור בעלות בחשבון'], ['הננו לאשר כי החשבון שבנדון רשום בסניפנו על שם']]).type, 'bankProof');
 });
+
+// עברית בקידוד ישן (à = א): כך יוצא לפעמים אישור שהודפס מאתר הבנק.
+const legacyEnc = (t) => t.replace(/[א-ת]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x05d0 + 0xe0));
+test('אישור בנק בקידוד ישן מזוהה, ולא נחשב טופס 106 ישן', () => {
+  const lines = [['אישור בעלות בחשבון'], ['הננו לאשר כי החשבון שבנדון רשום בסניפנו על שם'], ['הבנק הבינלאומי הראשון לישראל בעמ סניף קרית שמונה']].map((l) => l.map(legacyEnc));
+  assert.equal(parseDocument(lines).type, 'bankProof');
+});
+test('קובץ בקידוד ישן שהוא לא טופס שכר: לא מזוהה, בלי אזהרת 106', () => {
+  const lines = [['שלום וברכה לכל המשתתפים בכנס השנתי שלנו']].map((l) => l.map(legacyEnc));
+  assert.equal(parseDocument(lines).type, 'unknown');
+  assert.equal(parseDocument([['ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞß']]).type, 'unknown');
+});
+test('אישור בנק עם טקסט הפוך מזוהה', () => {
+  assert.equal(parseDocument([['ןובשחב תולעב רושיא']]).type, 'bankProof');
+});
