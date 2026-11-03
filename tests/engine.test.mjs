@@ -167,11 +167,11 @@ test('נקודות ילדים לאב: תואם לטופסי 106 אמיתיים 2
   assert.equal(r22.results[0].lines.points, 3.75);
 });
 
-test('נקודות ילדים: גיל 6–12 ב-2022 = אם 2 (הוראת שעה), 2021 כמו 2020, 2026 חסום, ילדים שלא גרים איתך = רו"ח', () => {
+test('נקודות ילדים: גיל 6–12 ב-2022 = אם 2 (הוראת שעה), 2021 כמו 2020, 2026 כמו 2024, ילדים שלא גרים איתך = רו"ח', () => {
   assert.equal(computeYear(2022, { people: [person({ gender: 'f', flags: { kids: { ages: [8], column: 'mother' } } })] }).results[0].lines.points, 4.75);
   assert.equal(computeYear(2021, { people: [person({ flags: { kids: { ages: [1], column: 'father' } } })] }).results[0].lines.points, 4.75);
   assert.equal(computeYear(2021, { people: [person({ gender: 'f', flags: { kids: { ages: [8], column: 'mother' } } })] }).results[0].lines.points, 3.75);
-  assert.equal(computeYear(2026, { people: [person({ flags: { kids: { ages: [1], column: 'father' } } })] }).status, 'blocked');
+  assert.equal(computeYear(2026, { people: [person({ flags: { kids: { ages: [1], column: 'father' } } })] }).results[0].lines.points, 6.75);
   assert.equal(computeYear(2024, { people: [person({ flags: { kids: { ages: [2], notWithMe: true } } })] }).status, 'cpa');
   assert.equal(computeYear(2024, { people: [person({ gender: 'f', flags: { kids: { ages: [8], column: 'mother' } } })] }).results[0].lines.points, 4.75);
 });
@@ -186,10 +186,10 @@ test('תואר ראשון, הורה יחיד, מזונות, בן/בת זוג: נ
   assert.equal(computeYear(2024, { people: [person({ flags: { stop: ['x'] } })] }).status, 'cpa');
 });
 
-test('תרומות: 35%, מינימום לכל שנה, עד 30% מההכנסה, 2025 חסום', () => {
+test('תרומות: 35%, מינימום לכל שנה, עד 30% מההכנסה', () => {
   const d = (year, donations, income = 200_000) => computeYear(year, { people: [person({ employers: [{ income, taxWithheld: 30_000 }], credits: { donations } })] });
   assert.equal(d(2024, 1_000).results[0].lines.donationsCredit, 350);
   assert.equal(d(2024, 150).results[0].lines.donationsCredit, 0); // מתחת למינימום 207
   assert.equal(d(2024, 100_000).results[0].lines.donationsCredit, Math.round(0.35 * 60_000));
-  assert.equal(d(2025, 1_000).status, 'blocked');
+  assert.equal(d(2025, 1_000).results[0].lines.donationsCredit, 350);
 });
