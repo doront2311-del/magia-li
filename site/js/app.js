@@ -86,18 +86,33 @@ function renderMe(ctx) {
   <p class="muted">אלה שאלות שלנו, לא טופס של רשות המסים. כל שאלה ממלאת שדה בדו"ח 1301 או קובעת אם מגיעה לך נקודת זיכוי.</p>
   <div class="card">
     ${q.choice('me.gender', 'מין', [['m', 'גבר'], ['f', 'אישה']], 'אישה מקבלת חצי נקודת זיכוי נוספת.')}
-    ${q.yn('me.hasKids', `היו לך ילדים מתחת לגיל 19 באחת השנים <span dir="ltr">${YEARS[0]}–${YEARS.at(-1)}</span>?`, 'ילדים מזכים בנקודות זיכוי לפי הגיל שלהם בכל שנה.')}`;
+    ${q.yn('me.hasKids', `היו לך ילדים מתחת לגיל 19 ${selText()}?`, 'כולל ילד שנולד באותה שנה. ילדים מזכים בנקודות זיכוי לפי הגיל שלהם בכל שנה.')}`;
   if (get('me.hasKids') === 'yes') html += `<div class="sub">${q.text('me.kidsBirthYears', 'שנות הלידה של הילדים', 'מופרדות בפסיק, למשל: 2022, 2025')}</div>`;
   html += q.yn('me.degree', 'סיימת תואר אקדמי או תעודת מקצוע?', 'על סיום תואר מגיעה נקודת זיכוי לשנה אחת. מספיק לציין שנה.');
   if (get('me.degree') === 'yes') html += `<div class="sub">${q.num('me.degreeYear', 'באיזו שנה סיימת?', 'השנה שבה קיבלת זכאות לתואר', { min: 1960, max: 2030 })}</div>`;
-  html += q.yn('me.served', 'שירתת בשירות צבאי סדיר או בשירות לאומי?', 'חיילים משוחררים מקבלים נקודות זיכוי ל-3 שנים אחרי השחרור.');
-  if (get('me.served') === 'yes') html += `<div class="sub">${q.num('me.dischargeYear', 'באיזו שנה השתחררת?', 'מספיק שנה. תאריך מדויק נבקש רק אם הוא משנה את התוצאה.', { min: 1960, max: 2030 })}</div>`;
-  html += q.yn('me.prevRefund', 'קיבלת בעבר החזר מרשות המסים לחשבון הבנק שאליו תבקש את ההחזר הפעם?', 'אם לא, צריך לצרף אישור ניהול חשבון.');
+  html += q.yn('me.served', 'שירתת בשירות צבאי סדיר (חובה) או בשירות לאומי?', 'הכוונה לשירות הסדיר, לא למילואים. חיילים משוחררים מקבלים נקודות זיכוי ל-3 שנים אחרי השחרור. על מילואים נשאל בהמשך, בתוך כל שנה.');
+  if (get('me.served') === 'yes') {
+    html += `<div class="sub">${q.num('me.dischargeYear', 'באיזו שנה השתחררת מהשירות הסדיר?', 'מספיק שנה. חודש נבקש רק אם הוא משנה את התוצאה.', { min: 1960, max: 2030 })}`;
+    if (dischargeNeedsMonth()) html += q.num('me.dischargeMonth', 'באיזה חודש השתחררת? (1–12)', 'הזכאות נמשכת 36 חודשים מהשחרור, ולכן בשנה שבה היא מתחילה או נגמרת החודש קובע כמה נקודות מגיעות.', { min: 1, max: 12 });
+    html += '</div>';
+  }
+  html += q.choice('me.prevRefund', 'קיבלת בעבר החזר מרשות המסים לחשבון הבנק שאליו תבקש את ההחזר הפעם?', [['yes', 'כן'], ['no', 'לא'], ['unsure', 'לא בטוח/ה']], 'אם לא, או שלא בטוח, מצרפים אישור ניהול חשבון. מורידים אותו מהאפליקציה של הבנק, וזה לוקח דקה.');
   html += '</div>';
   return html;
 }
 
 // ---------- step: years (שאלות + מסמכים לכל שנה) ----------
+// דיוק מדורג: חודש השחרור משנה רק כשאחת השנים שנבדקות היא שנת השחרור או השנה שבה 36 החודשים נגמרים.
+function dischargeNeedsMonth() {
+  const sy = Number(get('me.dischargeYear'));
+  if (!sy) return false;
+  return (get('screen.selectedYears') || []).some((y) => y === sy || y === sy + 3);
+}
+function selText() {
+  const sel = get('screen.selectedYears') || [];
+  if (sel.length === 1) return `בשנת ${sel[0]}`;
+  return `באחת השנים שבחרת (${sel.join(', ')})`;
+}
 const kidsYears = () => String(get('me.kidsBirthYears') || '').split(/[,\s]+/).map(Number).filter((n) => n > 1900);
 
 function renderPersonDocs(q, base, who, year) {
@@ -146,10 +161,13 @@ function renderYear(ctx, year) {
   const y = `years.${year}`;
   let html = `<div class="card"><h2 style="margin-top:0">שנת ${year}</h2>
     ${q.choice(`${y}.marital`, `מה היה המצב המשפחתי שלך בשנת ${year}?`,
-      [['single', 'רווק/ה'], ['married', 'נשוי/אה'], ['commonLaw', 'גרים יחד בלי נישואים רשומים (ידועים בציבור)'], ['divorced', 'גרוש/ה'], ['widowed', 'אלמן/ה'], ['separated', 'נשואים שחיים בנפרד']],
-      'לצורכי מס, בני זוג שגרים יחד ומנהלים משק בית משותף נחשבים בני זוג גם בלי נישואים רשומים.')}`;
+      [['single', 'רווק/ה'], ['married', 'נשוי/אה (רשום בתעודת הזהות)'], ['commonLaw', 'בתעודת הזהות לא נשוי/אה, אבל גר/ה עם בן/בת זוג ומנהלים משק בית משותף'], ['divorced', 'גרוש/ה'], ['widowed', 'אלמן/ה'], ['separated', 'נשואים שחיים בנפרד']],
+      'בוחרים לפי המצב בפועל באותה שנה.')}`;
   const m = get(`${y}.marital`);
-  const couple = m === 'married' || m === 'commonLaw';
+  const couple = m === 'married';
+  if (m === 'commonLaw') {
+    html += `<div class="notice info">בדו"ח באתר רשות המסים המצב המשפחתי מגיע ממרשם האוכלוסין, ולכן מסמנים "רווק/ה" (או מה שרשום אצלך), ולא צריך את המסמכים של בן/בת הזוג. אם יש לכם ילדים, ייתכן שהזוגיות משפיעה על נקודות הזיכוי בעדם, ונבדוק את זה כשנוסיף את כללי הילדים.</div>`;
+  }
   if (couple) {
     html += `<div class="notice info">זוגות נשואים מגישים דו"ח אחד משותף, ולכן צריך גם את המסמכים של בן/בת הזוג (טופס 106 וביטוח לאומי). זה לא שאלון כפול: רק המסמכים ושתי שאלות. הדו"ח המשותף לא יוצר "ממוצע": כל אחד ממוסה לפי ההכנסה שלו.</div>
       <div class="sub">${q.choice(`${y}.spouseGender`, 'מין בן/בת הזוג', [['m', 'גבר'], ['f', 'אישה']])}
@@ -160,10 +178,10 @@ function renderYear(ctx, year) {
   if (m === 'divorced') html += q.yn(`${y}.alimony`, `שילמת מזונות לבן/בת זוג לשעבר בשנת ${year}?`);
   html += `
     ${q.yn(`${y}.otherIncome`, `היו לך${couple ? ' או לבן/בת הזוג' : ''} בשנת ${year} הכנסות מהשכרת דירה, מכירת מניות או קריפטו, דיבידנד, או הכנסות מחו"ל?`)}
-    ${q.yn(`${y}.severance`, `קיבלת${couple ? ' (או בן/בת הזוג)' : ''} בשנת ${year} פיצויי פיטורין או משכת כסף מקופת פנסיה או גמל (טופס 161)?`)}
+    ${q.yn(`${y}.severance`, `קיבלת${couple ? ' (או בן/בת הזוג)' : ''} בשנת ${year} כסף לחשבון הבנק מפיצויים, או משכת כסף מקופת פנסיה, גמל או קרן השתלמות לפני הזמן?`, 'אם עזבת עבודה והפיצויים נשארו בקרן הפנסיה ולא משכת אותם, עונים "לא". המעסיק אולי נתן לך טופס 161, אבל אם הכסף לא יצא מהקרן אין כאן הכנסה לדווח עליה. קרן השתלמות אחרי 6 שנים: גם "לא".')}
     ${q.yn(`${y}.settlement`, `גרת בפועל ביישוב מזכה בשנת ${year}?`, 'בפועל = מרכז החיים: שם ישנת, שם גרו הילדים. רישום בתעודת הזהות לבד לא מספיק.')}`;
   if (get(`${y}.settlement`) === 'yes') html += `<div class="sub">${q.num(`${y}.settlementMonths`, 'כמה חודשים בשנה הזו גרת שם בפועל?', '', { min: 1, max: 12 })}</div>`;
-  html += q.yn(`${y}.lifeIns`, `שילמת בשנת ${year} ביטוח חיים פרטי (כולל ביטוח חיים של משכנתא)?`, 'לא דרך המעסיק. מורידים "אישור שנתי למס הכנסה" מאתר חברת הביטוח.');
+  html += q.yn(`${y}.lifeIns`, `שילמת בעצמך בשנת ${year} על ביטוח חיים, כולל ביטוח חיים של משכנתא?`, 'הכוונה לביטוח שאתה משלם, למשל בהוראת קבע לחברת הביטוח או דרך הבנק של המשכנתא. ביטוח שהמעסיק מפריש לך דרך התלוש לא נחשב כאן. אם כן, תצטרך להוריד "אישור שנתי למס הכנסה" מהאזור האישי באתר של חברת הביטוח שלך.');
   if (get(`${y}.lifeIns`) === 'yes') html += `<div class="sub">${q.num(`${y}.lifeInsAmount`, 'סכום הפרמיות בשנה לפי האישור')}</div>`;
   html += q.yn(`${y}.disability`, `שילמת בשנת ${year} ביטוח אובדן כושר עבודה פרטי (לא דרך המעסיק)?`);
   if (get(`${y}.disability`) === 'yes') html += `<div class="sub">${q.num(`${y}.disabilityAmount`, 'סכום ששילמת בשנה')}</div>`;
@@ -175,7 +193,7 @@ function renderYear(ctx, year) {
 
   const out = yearOut(year);
   if (out) {
-    html += `<div class="notice warn"><b>את השנה הזו לא נחשב.</b> ${out}</div></div>`;
+    html += `<div class="notice warn"><b>את ${year} האפליקציה לא תחשב.</b> ${out}<br>אפשר להמשיך בתהליך: את שאר השנים שבחרת נחשב כרגיל. לשנה הזו לא נבקש מסמכים, ובתוצאה היא תסומן "מחוץ להיקף". טעית בתשובה? פשוט משנים אותה כאן.</div></div>`;
     return html;
   }
   html += renderPersonDocs(q, `${y}.self`, 'self', year);
@@ -188,7 +206,7 @@ function yearOut(year) {
   const y = `years.${year}`;
   if (get(`${y}.marital`) === 'separated') return 'נשואים שחיים בנפרד מגישים עם טופס 4440, וזה עוד לא נתמך. מומלץ רואה חשבון.';
   if (get(`${y}.otherIncome`) === 'yes') return 'הכנסות מנכסים, מניות, קריפטו או מחו"ל עוד לא נתמכות. מומלץ רואה חשבון.';
-  if (get(`${y}.severance`) === 'yes') return 'פיצויים ומשיכות מקופות (טופס 161) דורשים בדיקה של פריסה ופטורים. מומלץ רואה חשבון.';
+  if (get(`${y}.severance`) === 'yes') return 'משיכת פיצויים או כספים מקופות דורשת חישוב של פטורים ופריסה, וזה עוד לא נתמך. מומלץ רואה חשבון.';
   if (get(`${y}.privatePension`) === 'yes') return 'הפקדה עצמאית לפנסיה עוד לא נתמכת. מומלץ רואה חשבון.';
   return null;
 }
@@ -231,11 +249,11 @@ function caseFor(year) {
   const y = (k) => get(`years.${year}.${k}`);
   const kids = kidsYears().some((b) => year - b >= 0 && year - b <= 18);
   const m = y('marital');
-  const couple = m === 'married' || m === 'commonLaw';
+  const couple = m === 'married';
   const dy = Number(get('me.degreeYear')), sy = Number(get('me.dischargeYear'));
   const flags = {
     kids,
-    singleParent: kids && !couple,
+    singleParent: kids && !couple && m !== 'commonLaw',
     degree: get('me.degree') === 'yes' && (year === dy || year === dy + 1),
     dischargedSoldier: get('me.served') === 'yes' && year >= sy && year <= sy + 3,
     alimony: y('alimony') === 'yes',
@@ -255,7 +273,7 @@ function caseFor(year) {
     sp.settlement.livedMonths = self.settlement.livedMonths;
     people.push(sp);
   }
-  return { maritalStatus: m, people, needsBankProof: get('me.prevRefund') === 'no' };
+  return { maritalStatus: m, people, needsBankProof: get('me.prevRefund') !== 'yes' };
 }
 
 function resultFor(year) {
@@ -288,6 +306,7 @@ function renderResults() {
   const totalIdx = refunds.reduce((s, r) => s + (r.indexation || 0), 0);
   let html = `<h1>התוצאה</h1>`;
   if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ החזר צפוי ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}</div><div class="amount">${fmt(total)} ₪</div><div>ועוד כ-${fmt(totalIdx)} ₪ הצמדה וריבית (הערכה)</div></div>`;
+  html += '<div class="row"><button class="btn secondary" type="button" data-go="years">חזרה לתיקון התשובות</button></div>';
   html += '<p class="muted small">החישוב לפי מה שמסרת. לפני כל הגשה תלחצו על "חישוב" באתר רשות המסים ותשוו למספרים כאן.</p>';
   for (const r of rs) {
     const [title, rec] = STATUS_TEXT[r.status];
@@ -309,6 +328,7 @@ function renderResults() {
     if (r.stops?.length) html += `<div class="notice warn">${r.stops.join('<br>')}</div>`;
     if (r.status === 'blocked') html += `<div class="notice warn">${r.blocks.map(esc).join('<br>')}</div><p class="small muted">כשחסר מסמך, אפשר להשלים אותו ולחזור. כשהכלל עוד לא אומת אצלנו, נעדכן את האפליקציה בקרוב. לא נחשב שום דבר שלא בדקנו מול מקור רשמי.</p>`;
     if (r.status === 'out') html += `<div class="notice warn">${esc(r.blocks[0])}</div>`;
+    if (r.status !== 'refund') html += `<button class="btn link" type="button" data-edit="${r.year}">תיקון התשובות ל-${r.year}</button>`;
     if (r.status === 'refund') html += `<p class="small muted">מועד אחרון להגשה: ${deadline(r.year)}</p><button class="btn" data-guide="${r.year}" type="button">מדריך הגשה ל-${r.year}</button>`;
     html += '</div>';
   }
@@ -370,7 +390,7 @@ function render(showMissing = false) {
   app.innerHTML = `<div class="brand"><a href="./" style="text-decoration:none">מגיע לי</a></div>
     <div class="progress">${STEPS.slice(0, 4).map((s, i) => `<span class="${i <= Math.min(idx, 3) ? 'on' : ''}" title="${STEP_NAMES[s]}"></span>`).join('')}</div>
     ${body}${nav}
-    <footer><button class="btn link" type="button" id="wipe">מחיקת כל הנתונים מהדפדפן</button></footer>`;
+    <footer>התשובות נשמרות רק במחשב הזה, כדי שתוכל לסגור את הדף ולהמשיך אחר כך. הן לא נשלחות לשום מקום. <button class="btn link" type="button" id="wipe">מחיקת התשובות שלי מהמחשב הזה</button> (למשל אם זה מחשב משותף, או כדי להתחיל מחדש)</footer>`;
   app._ctx = ctx;
   if (focusPath) document.querySelector(`[data-path="${CSS.escape(focusPath)}"]`)?.focus();
 }
@@ -412,6 +432,7 @@ app.addEventListener('click', async (ev) => {
     }
     return go(STEPS[STEPS.indexOf(state.step) + 1]);
   }
+  if (t.dataset.edit) { state.ui.year = Number(t.dataset.edit); return go('years'); }
   if (t.dataset.guide) { state.ui.guideYear = Number(t.dataset.guide); track('guide_open'); return go('guide'); }
   if (t.dataset.go) return go(t.dataset.go);
   if (t.dataset.copy !== undefined) {
