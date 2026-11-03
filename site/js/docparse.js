@@ -165,6 +165,8 @@ export function parseDocument(rawLines) {
     return { type: 'btlAnnual', year: m ? Number(m[1]) : null, benefits, idTail: idTail(L) };
   }
   if (/אישורתושב|1312א|1312/.test(all)) return { type: 'residency' };
+  // אישור שהמועצה מילאה: לפעמים רק הנתונים הם טקסט, והטופס עצמו תמונת רקע. מזהים לפי שם הרשות ותאריך.
+  if (/מועצהאזורית|מועצהמקומית|עיריית|עירייה|ועדמקומי/.test(all) && /\d{2}\/\d{2}\/\d{4}/.test(all)) return { type: 'residency' };
   return { type: 'unknown' };
 }
 
