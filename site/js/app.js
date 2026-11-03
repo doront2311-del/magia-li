@@ -180,7 +180,45 @@ function docsState(base, year) {
   }
   if (needsResidency(base, year) && !s.residency) need.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב');
   for (const e of s.employers) if (e.income == null) need.push(`לא הצלחנו לקרוא את ההכנסה בקובץ "${e.source}". נסו את טופס ה-106 מרשות המסים (נספח ב').`);
-  return { s, need, btl, complete: need.length === 0 };
+  return { s, need, btl, complete: need.length === 0, partial: partialFrom(s, base, year) };
+}
+
+// כשחסרים מסמכים: מה עדיין אפשר לחשב, מה לא נכלל ולאיזה כיוון זה יכול לשנות, ומה חוסם לגמרי.
+// אין ניחושים: כל מספר בחישוב מגיע ממסמך שהועלה. מה שלא ידוע נשאר בחוץ ומופיע ברשימה.
+function partialFrom(s, base, year) {
+  const blocks = [], excluded = [], filingDocs = [];
+  const SUMMARY = 'ריכוז הכנסות מכל המעסיקים (רשות המסים: הקישור "למסמך ריכוז הכנסות")';
+  let adjust = null;
+  if (!s.summary) {
+    blocks.push(`חסר ${SUMMARY}. בלי המסמך הזה אי אפשר לדעת מי היו כל המעסיקים ב-${year} וכמה מס נוכה, ולכן אין בסיס להערכה.`);
+  } else {
+    const gap = s.missing.length > 0 || s.employers.some((e) => e.income == null);
+    if (gap) {
+      const ti = s.summary.fields?.income, tt = s.summary.fields?.taxWithheld;
+      if (ti == null || tt == null) blocks.push(`חסר טופס 106 של חלק מהמעסיקים, ולא הצלחנו לקרוא את הסכומים בריכוז ההכנסות, ולכן אין בסיס להערכה.`);
+      else {
+        // ההכנסה, המס, וגם ההפקדות לפנסיה (כשהן מופיעות) של כל המעסיקים ביחד לקוחים מהריכוז הרשמי.
+        // מורידים את מה שכבר בטופסי ה-106 שהועלו, והשאר נכנס כשורה אחת.
+        const known = s.employers.filter((e) => e.income != null);
+        const tot = (k) => known.reduce((t, e) => t + (e[k] || 0), 0);
+        const pd = s.summary.fields?.pensionDeposit, ii = s.summary.fields?.insuredIncome;
+        adjust = { name: 'מעסיקים בלי טופס 106 (הסכומים מהריכוז)', income: ti - tot('income'), taxWithheld: tt - tot('taxWithheld'),
+          pensionDeposit: pd != null ? Math.max(0, pd - tot('pensionDeposit')) : 0, insuredIncome: ii != null ? Math.max(0, ii - tot('insuredIncome')) : 0, settlementCode: 0 };
+        const lacking = [...s.missing.map((e) => ({ name: e.name, doc: `טופס 106 של ${e.name} (רשות המסים: "להצגת טופס 106")` })),
+          ...s.employers.filter((x) => x.income == null).map((e) => ({ name: e.name, doc: `טופס 106 של ${e.name} מרשות המסים (נספח ב'), כי הקובץ "${e.source}" לא נקרא עד הסוף` }))];
+        for (const e of lacking) {
+          if (pd == null) excluded.push({ label: `הזיכוי על הפקדות לפנסיה אצל ${e.name} (ההכנסה והמס כן נכללו, מהריכוז)`, effect: 'up', doc: e.doc, kind: 'doc' });
+          else filingDocs.push(`${e.doc}. ההכנסה, המס וההפקדות לפנסיה נלקחו מהריכוז, אבל את הטופס צריך כדי למלא את הדו"ח ולבדוק אם המעסיק נתן הנחות בתלוש (למשל הטבת יישוב)`);
+        }
+      }
+    }
+  }
+  if (!s.btlAnnual) excluded.push({ label: 'תשלומים מביטוח לאומי (אבטלה, דמי לידה, מילואים ועוד), אם היו', effect: 'either', doc: 'אישור תשלומים שנתי (ביטוח לאומי, תפריט "אישורים")', kind: 'doc' });
+  if (!s.certs.some((c) => c.kind === 'miluim') && get(`${base}.miluimDirect`) === 'yes') {
+    excluded.push({ label: 'תגמולי מילואים ששולמו ישירות מביטוח לאומי (גם ההכנסה וגם המס שנוכה)', effect: 'either', doc: 'אישור שנתי למס הכנסה על תשלום תגמולי מילואים (ביטוח לאומי)', kind: 'doc' });
+  }
+  if (needsResidency(base, year) && !s.residency) filingDocs.push('אישור תושבות (טופס 1312א) מהמועצה או מהעירייה של היישוב. צריך לצרף אותו כשמבקשים את הטבת היישוב');
+  return { blocks, excluded, filingDocs, adjust };
 }
 
 // רשימת הסימון: מה צריך להוריד מכל אתר, ומה כבר הועלה. מתעדכנת לבד לפי הקבצים שהאפליקציה זיהתה.
@@ -239,8 +277,11 @@ function renderPersonDocs(q, base, who, year) {
   } else if (s.summary && !s.expected.length) {
     html += '<div class="notice info">בריכוז נתוני השכר לא מופיע אף מעסיק בשנה הזו.</div>';
   }
-  if (need.length) html += `<div class="q${q.missCls(`${base}.docsOk`)}" data-q="${base}.docsOk"><div class="notice warn"><b>עוד חסר:</b><ul>${need.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div></div>`;
-  q.req(`${base}.docsOk`);
+  if (need.length) {
+    html += `<div class="notice warn"><b>עוד חסר:</b><ul>${need.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
+    html += q.choice(`${base}.partialOk`, 'אין לך עכשיו את כל המסמכים?', [['yes', 'להמשיך בלי, ולקבל הערכה חלקית']],
+      'נחשב רק לפי מה שהועלה, בלי לנחש את החסר. בתוצאה תופיע כוכבית עם מה שלא נכלל, ורשימה של המסמכים שחסרים. אפשר לחזור ולהעלות אותם מתי שרוצים.');
+  }
   if (complete) html += `<div class="notice info small">✓ כל המסמכים לשנה הזו הועלו. אם משהו בטבלה נראה לך לא נכון: <button class="btn link" type="button" data-mode="${base}|manual">תיקון ידני של המספרים</button></div>`;
   html += `<p class="small"><button class="btn link" type="button" data-mode="${base}|manual">אין לי את הקבצים, אני רוצה להקליד ידנית</button></p>`;
   return html;
@@ -378,9 +419,11 @@ function renderYears(ctx) {
 // ---------- from answers to engine input ----------
 function personFrom(base, gender, flags, year) {
   if (get(`${base}.mode`) !== 'manual') {
-    const { s, btl } = docsState(base, year);
+    const { s, btl, partial } = docsState(base, year);
     const employers = s.employers.map((e) => ({ name: e.name, income: e.income, taxWithheld: e.taxWithheld, pensionDeposit: e.pensionDeposit, insuredIncome: e.insuredIncome, settlementCode: e.settlementCode }));
-    return { gender, flags, employers, btl: btl.map((b) => ({ label: b.label, gross: b.gross, taxWithheld: b.taxWithheld })), credits: {}, settlement: { employerGave: employers.reduce((t, e) => t + (e.settlementCode || 0), 0) } };
+    if (partial.adjust) employers.push(partial.adjust);
+    return { gender, flags, employers, btl: btl.map((b) => ({ label: b.label, gross: b.gross, taxWithheld: b.taxWithheld })), credits: {}, settlement: { employerGave: employers.reduce((t, e) => t + (e.settlementCode || 0), 0) },
+      blocks: partial.blocks, excluded: partial.excluded, filingDocs: partial.filingDocs };
   }
   const n = Number(get(`${base}.employersCount`)) || 0;
   const employers = [];
@@ -487,6 +530,27 @@ const STATUS_TEXT = {
   out: ['השנה מחוץ להיקף של האפליקציה', ''],
 };
 
+// כוכבית: מה לא נכלל בהערכה, ולאיזה כיוון זה יכול לשנות. ורשימת המסמכים שחסרים.
+const star = (r) => (r.partial ? '<sup>*</sup>' : '');
+function partialNotice(r) {
+  let html = '';
+  if (r.excluded?.length && r.status !== 'blocked') {
+    const li = r.excluded.map((e) => `<li>${esc(e.label)}${e.effect === 'either' ? ' <b>(יכול לשנות לשני הכיוונים, גם לחוב)</b>' : ''}</li>`).join('');
+    html += r.direction === 'either'
+      ? `<div class="notice warn"><b>* הערכה חלקית, והתוצאה עוד יכולה להשתנות לשני הכיוונים.</b> לא נכללו בחישוב:<ul>${li}</ul>לא ניחשנו את מה שחסר. מה שמסומן "לשני הכיוונים" יכול גם להגדיל את ההחזר וגם להקטין אותו, ואפילו להפוך אותו לחוב. <b>לא מחליטים אם להגיש לפני שמשלימים את המסמכים.</b></div>`
+      : `<div class="notice info"><b>* הערכה חלקית.</b> לא נכללו בחישוב:<ul>${li}</ul>לא ניחשנו את מה שחסר. כל אחד מהפריטים האלה יכול רק להגדיל את ההחזר (או להקטין את החוב), לכן התוצאה בפועל תהיה לפחות טובה כמו ההערכה.</div>`;
+  }
+  if (r.missingDocs?.length) html += `<div class="notice warn"><b>מסמכים שחסרים לנו ל-${r.year}:</b><ul>${r.missingDocs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>${r.status === 'refund' ? `<button class="btn link" type="button" data-edit="${r.year}">להעלאת המסמכים ל-${r.year}</button>` : ''}</div>`;
+  return html;
+}
+function partialRec(r, rec) {
+  if (!r.partial || r.status === 'blocked' || r.status === 'cpa') return rec;
+  if (r.direction === 'either') return r.status === 'debt' ? `${rec} ההערכה חלקית, אז כדאי לבדוק שוב אחרי שמשלימים את המסמכים.` : 'כדאי להשלים את המסמכים לפני שמחליטים להגיש.';
+  if (r.status === 'debt') return `${rec} הפריטים שלא נכללו יכולים להקטין את החוב, ואולי אפילו להפוך אותו להחזר. כדאי לבדוק שוב אחרי שמשיגים את המסמכים.`;
+  if (r.status === 'refund' && r.missingDocs?.length) return 'מומלץ להגיש. כדאי קודם להשיג את המסמכים שחסרים, כדי שגם מה שלא נכלל ייכנס להחזר.';
+  return rec;
+}
+
 function renderResults() {
   const sel = get('screen.selectedYears') || [];
   const rs = sel.map(resultFor);
@@ -496,21 +560,25 @@ function renderResults() {
     if (tracked[r.year] !== key) { track('year_result', { status: r.status, bucket: r.balance != null ? amountBucket(r.balance) : '-' }); tracked[r.year] = key; }
   });
   save();
-  const refunds = rs.filter((r) => r.status === 'refund');
+  // בסכום הכולל: רק שנים שהתוצאה בהן יכולה רק לעלות. שנה שיכולה להשתנות לשני הכיוונים מוצגת בנפרד.
+  const refunds = rs.filter((r) => r.status === 'refund' && r.direction !== 'either');
+  const unsure = rs.filter((r) => r.status === 'refund' && r.direction === 'either');
   const total = refunds.reduce((s, r) => s + r.balance, 0);
   const totalIdx = refunds.reduce((s, r) => s + (r.indexation || 0), 0);
+  const anyPartial = refunds.some((r) => r.partial);
   let html = `<h1>התוצאה</h1>`;
-  if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ החזר צפוי ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}</div><div class="amount">${fmt(total)} ₪</div><div>ועוד כ-${fmt(totalIdx)} ₪ הצמדה וריבית (הערכה)</div></div>`;
+  if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ החזר צפוי ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}</div><div class="amount">${anyPartial ? 'לפחות ' : ''}${fmt(total)} ₪${anyPartial ? '<sup>*</sup>' : ''}</div><div>ועוד כ-${fmt(totalIdx)} ₪ הצמדה וריבית (הערכה)</div>${anyPartial ? `<div class="small">* הערכה חלקית ל-${refunds.filter((r) => r.partial).map((r) => r.year).join(', ')}: חלק מהנתונים חסרים ולא נכללו. הפירוט וההסבר בכל שנה למטה.</div>` : ''}${unsure.length ? `<div class="small">לא כולל את ${unsure.map((r) => r.year).join(', ')}, כי שם התוצאה עוד יכולה להשתנות לשני הכיוונים.</div>` : ''}</div>`;
   const forGuide = rs.filter(guideable);
   if (forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. השנים במסמך: ${forGuide.map((r) => r.year).join(', ')}.${forGuide.some((r) => r.status === 'blocked') ? ' בשנה שלא חושבה, בודקים את התוצאה בכפתור "חישוב" באתר לפני שמשדרים.' : ''}${forGuide.some((r) => ['zero', 'debt', 'cpa'].includes(r.status)) ? ' גם שנה שלא יוצא בה החזר נמצאת במסמך, כדי שתוכל להחליט בעצמך.' : ''} אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
-  if (!forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך מסביר שלב-אחר-שלב מה לכתוב בכל שדה באתר של רשות המסים. הוא נוצר לכל שנה שכל המסמכים שלה הועלו. ${rs.some((r) => r.status === 'blocked') ? 'בשנים שסומנו "עוד אי אפשר לחשב" חסרים מסמכים: ראו "מה עוד חסר" בשלב "שנים ומסמכים".</p><button class="btn secondary" type="button" data-go="years">להשלמת המסמכים</button>' : 'כרגע אין שנה שכדאי להגיש לה.</p>'}</div>`;
+  if (!forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך מסביר שלב-אחר-שלב מה לכתוב בכל שדה באתר של רשות המסים. הוא נוצר לכל שנה שכל המסמכים שלה הועלו. ${rs.some((r) => r.status === 'blocked' || r.missingDocs?.length) ? 'עוד חסרים מסמכים (הרשימה מופיעה בכל שנה למטה). אחרי שתעלה אותם בשלב "שנים ומסמכים", המסמך ייווצר.</p><button class="btn secondary" type="button" data-go="years">להשלמת המסמכים</button>' : 'כרגע אין שנה שכדאי להגיש לה.</p>'}</div>`;
   html += '<div class="row"><button class="btn secondary" type="button" data-go="years">חזרה לתיקון התשובות</button></div>';
   html += '<p class="muted small">החישוב לפי מה שמסרת. לפני כל הגשה תלחצו על "חישוב" באתר רשות המסים ותשוו למספרים כאן.</p>';
   for (const r of rs) {
-    const [title, rec] = STATUS_TEXT[r.status];
-    html += `<div class="card result ${r.status}"><h2 style="margin-top:0">${r.year}: ${title}</h2>`;
+    const [title, baseRec] = STATUS_TEXT[r.status];
+    const rec = partialRec(r, baseRec);
+    html += `<div class="card result ${r.status}"><h2 style="margin-top:0">${r.year}: ${title}${r.partial && r.status !== 'blocked' ? ' (הערכה חלקית)' : ''}</h2>`;
     if (r.balance != null && r.status !== 'blocked') {
-      html += `<div class="amount">${r.balance < 0 ? '−' : ''}${fmt(Math.abs(r.balance))} ₪</div>`;
+      html += `<div class="amount">${r.balance < 0 ? '−' : ''}${fmt(Math.abs(r.balance))} ₪${star(r)}</div>`;
       if (r.indexation) html += `<div>ועוד כ-${fmt(r.indexation)} ₪ הצמדה וריבית עד היום (הערכה, הסכום ממשיך לגדול עד התשלום)</div>`;
       const L = (k) => r.results.reduce((s, p) => s + p.lines[k], 0);
       html += `<table class="calc">
@@ -531,6 +599,7 @@ function renderResults() {
       }
     }
     if (rec) html += `<p>${rec}</p>`;
+    html += partialNotice(r);
     if (r.stops?.length) html += `<div class="notice warn">${r.stops.join('<br>')}</div>`;
     if (r.status === 'blocked') html += `<div class="notice warn">${r.blocks.map(esc).join('<br>')}</div><p class="small muted">כשחסר מסמך, אפשר להשלים אותו ולחזור. כשהכלל עוד לא אומת אצלנו, נעדכן את האפליקציה בקרוב. לא נחשב שום דבר שלא בדקנו מול מקור רשמי.</p>`;
     if (r.status === 'out') html += `<div class="notice warn">${esc(r.blocks[0])}</div>`;
@@ -547,9 +616,11 @@ function renderResults() {
 function docsCompleteFor(year) {
   const c = caseFor(year);
   return c.people.every((p) => get(`years.${year}.${p.role}.mode`) === 'manual' || get(`years.${year}.${p.role}.docsOk`) === 'yes')
-    && !resultFor(year).blocks.some((b) => /חסר|מסמך|אישור/.test(b));
+    && !resultFor(year).blocks.some((b) => /חסר|מסמך|אישור/.test(b))
+    && !(resultFor(year).excluded || []).some((e) => e.kind === 'doc');
 }
-const guideable = (r) => ['refund', 'zero', 'debt', 'cpa'].includes(r.status) || (r.status === 'blocked' && docsCompleteFor(r.year));
+// מדריך מילוי רק כשכל המסמכים הועלו: השדות במדריך מגיעים מהמסמכים, ובלעדיהם הם לא נכונים.
+const guideable = (r) => ['refund', 'zero', 'debt', 'cpa', 'blocked'].includes(r.status) && docsCompleteFor(r.year);
 
 function guideTabs(year) {
   const r = resultFor(year);
@@ -581,7 +652,7 @@ function renderGuide() {
     <h1>${one ? `מדריך הגשה ל-${one}` : 'המסמך המסכם להגשת החזר מס'}</h1>
     <p class="muted small">הופק ב"מגיע לי" בתאריך ${today}, לפי התשובות והמסמכים שהעלית. זה לא ייעוץ מס. לפני כל הגשה לוחצים "חישוב" באתר רשות המסים ומשווים.</p>
     <div class="card"><h2 style="margin-top:0">סיכום</h2><table class="calc">
-      ${rs.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}</div></td><td class="num">${fmt(r.balance)} ₪</td></tr>`).join('')}
+      ${rs.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}${r.partial ? '. * הערכה חלקית, ראו בפרק של השנה' : ''}</div></td><td class="num">${fmt(r.balance)} ₪${star(r)}</td></tr>`).join('')}
       ${other.map((r) => `<tr><td>${r.year}<div class="muted small">${r.balance < 0 ? 'לא מומלץ להגיש' : r.balance === 0 ? 'אין הפרש' : 'מומלץ רואה חשבון'}</div></td><td class="num">${r.balance < 0 ? `חוב ${fmt(-r.balance)} ₪` : `${fmt(r.balance)} ₪`}</td></tr>`).join('')}
       ${unknown.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}</div></td><td class="num">לא חושב</td></tr>`).join('')}
       ${rs.length > 1 ? `<tr><td><b>סה"כ</b><div class="muted small">ועוד כ-${fmt(rs.reduce((t, r) => t + (r.indexation || 0), 0))} ₪ הצמדה וריבית (הערכה)</div></td><td class="num"><b>${fmt(total)} ₪</b></td></tr>` : ''}
@@ -593,7 +664,8 @@ function renderGuide() {
       <li>את הקבצים שצריך לצרף לכל שנה תמצאו בסוף הפרק של אותה שנה. אפשר להוריד אותם מהאפליקציה בשם ברור (בשלב "שנים ומסמכים").</li></ul></div>`;
   for (const y of years) {
     const ry = resultFor(y);
-    html += `<section class="guide-year"><h2>שנת ${y}: ${ry.status === 'refund' ? `${fmt(ry.balance)} ₪` : ry.status === 'blocked' ? 'התוצאה לא חושבה, בודקים ב"חישוב" באתר' : ry.balance < 0 ? `חוב ${fmt(-ry.balance)} ₪, לא מומלץ להגיש` : `${fmt(ry.balance)} ₪`}</h2>${guideTabs(y).html}</section>`;
+    const gNote = ry.partial && ry.status !== 'blocked' ? `<div class="notice warn"><b>* לא נכלל בחישוב ובמדריך:</b><ul>${ry.excluded.map((e) => `<li>${esc(e.label)}${e.doc ? `. צריך: ${esc(e.doc)}` : ''}</li>`).join('')}</ul>את הסעיפים האלה האפליקציה עוד לא מכסה. אם תמלא אותם באתר לפי המסמך, ההחזר שיופיע ב"חישוב" באתר יהיה גבוה יותר מכאן, וזה בסדר.</div>` : '';
+    html += `<section class="guide-year"><h2>שנת ${y}: ${ry.status === 'refund' ? `${fmt(ry.balance)} ₪${star(ry)}` : ry.status === 'blocked' ? 'התוצאה לא חושבה, בודקים ב"חישוב" באתר' : ry.balance < 0 ? `חוב ${fmt(-ry.balance)} ₪, לא מומלץ להגיש` : `${fmt(ry.balance)} ₪`}</h2>${gNote}${guideTabs(y).html}</section>`;
   }
   html += `<section class="guide-year"><h2>אחרי ההגשה</h2>${afterBody()}</section>`;
   html += '<div class="row noprint"><button class="btn" type="button" data-go="after">הגשתי, מה עכשיו?</button> <button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>';
