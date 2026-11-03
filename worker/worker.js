@@ -4,7 +4,7 @@
 // POST /event         – אירוע אחד (JSON)
 // GET  /stats         – סיכום למסך הניהול. דורש כותרת Authorization: Bearer <ADMIN_TOKEN>
 
-const EVENTS = new Set(['landing_view', 'flow_start', 'share_link', 'app_open', 'step', 'year_result', 'guide_open', 'filed', 'stuck']);
+const EVENTS = new Set(['landing_view', 'flow_start', 'share_link', 'app_open', 'step', 'year_result', 'guide_open', 'filed', 'stuck', 'doc_read']);
 const KEYS = ['step', 'status', 'bucket', 'device', 'screen'];
 
 const cors = (origin) => ({
@@ -34,7 +34,7 @@ export default {
     if (req.method === 'GET' && url.pathname === '/stats') {
       if (!env.ADMIN_TOKEN || req.headers.get('Authorization') !== `Bearer ${env.ADMIN_TOKEN}`) return json({ error: 'unauthorized' }, 401, origin);
       const q = (sql) => env.DB.prepare(sql).all().then((r) => r.results);
-      const [byName, funnel, buckets, statuses, stuck, daily, devices] = await Promise.all([
+      const [byName, funnel, buckets, statuses, stuck, daily, devices, docTypes] = await Promise.all([
         q('SELECT name, COUNT(*) n, COUNT(DISTINCT visit) visits FROM events GROUP BY name'),
         q("SELECT step, COUNT(DISTINCT visit) visits FROM events WHERE name='step' GROUP BY step"),
         q("SELECT bucket, COUNT(*) n FROM events WHERE name='year_result' AND status='refund' GROUP BY bucket"),
@@ -42,8 +42,9 @@ export default {
         q("SELECT screen, COUNT(*) n FROM events WHERE name='stuck' GROUP BY screen"),
         q("SELECT day, COUNT(DISTINCT CASE WHEN name='landing_view' THEN visit END) landing, COUNT(DISTINCT CASE WHEN name='app_open' THEN visit END) started, SUM(name='filed') filed FROM events GROUP BY day ORDER BY day DESC LIMIT 30"),
         q("SELECT device, COUNT(DISTINCT visit) visits FROM events WHERE name IN ('landing_view','app_open') GROUP BY device"),
+        q("SELECT status type, COUNT(*) n FROM events WHERE name='doc_read' GROUP BY status"),
       ]);
-      return json({ byName, funnel, buckets, statuses, stuck, daily, devices }, 200, origin);
+      return json({ byName, funnel, buckets, statuses, stuck, daily, devices, docTypes }, 200, origin);
     }
     return json({ error: 'not found' }, 404, origin);
   },

@@ -102,3 +102,14 @@ footer { margin-top: 40px; color: var(--muted); font-size: 0.85rem; }
   h1 { font-size: 1.6rem; }
   .amount { font-size: 1.5rem; }
 }
+
+/* העלאת מסמכים */
+.drop { display: flex; flex-direction: column; gap: 4px; align-items: center; text-align: center; border: 2px dashed var(--brand); border-radius: var(--radius); padding: 22px 14px; margin: 12px 0; cursor: pointer; background: var(--brand-soft); }
+.drop input { max-width: 100%; }
+.howto { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 8px 0; background: var(--card); }
+.howto summary { cursor: pointer; font-weight: 600; }
+.howto ol { margin: 8px 0 4px; padding-inline-start: 22px; }
+.howto li { margin: 4px 0; }
+table.files { width: 100%; border-collapse: collapse; margin: 8px 0; }
+table.files td { padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-word; }
+table.files td:first-child { width: 1.5em; }
