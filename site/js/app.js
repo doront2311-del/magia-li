@@ -476,6 +476,12 @@ function renderResults() {
         <tr><td>מס שנוכה בפועל<div class="muted small">מכל טופסי ה-106 ואישורי ביטוח לאומי</div></td><td class="num">${fmt(L('withheld'))}</td></tr>
       </table>`;
       if (r.reasons?.length) html += `<p><b>למה?</b> ${r.reasons.join(' ')}</p>`;
+      if (L('settlementCredit')) {
+        const c = caseFor(r.year);
+        c.people.forEach((p) => { p.settlement = { ...p.settlement, livedMonths: 0, rate: 0, ceiling: 0, missing: null }; });
+        const alt = computeYear(r.year, c);
+        if (alt.balance != null) html += `<div class="notice warn"><b>התוצאה תלויה בהטבת היישוב (${fmt(L('settlementCredit'))} ₪).</b> בלי ההטבה: ${alt.balance >= 0 ? `החזר של ${fmt(alt.balance)} ₪` : `<b>חוב של ${fmt(-alt.balance)} ₪</b>`}. ההטבה מגיעה רק למי שגר ביישוב בפועל (שם ישן, שם מרכז החיים), לא למי שרק רשום שם. רשות המסים בודקת את זה, ואם לא גרת שם, ענה "לא" בשאלה על היישוב.</div>`;
+      }
     }
     if (rec) html += `<p>${rec}</p>`;
     if (r.stops?.length) html += `<div class="notice warn">${r.stops.join('<br>')}</div>`;
