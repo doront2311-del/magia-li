@@ -135,9 +135,9 @@ const HOWTO_LOGIN = `<li><b>כניסה:</b> <a class="btn small-btn" href="${TAX
 const HOWTO_SUMMARY = `<details class="howto" open><summary>איך מורידים מרשות המסים</summary><ol>
   ${HOWTO_LOGIN}
   <li>בעמוד הראשי בוחרים <b>"טפסי 106"</b>, ואז את השנה.</li>
-  <li>מורידים <b>שני סוגי קבצים</b>:<br>
-    (א) <b>"ריכוז נתוני שכר מכלל המעסיקים"</b>: קובץ אחד, הרשימה של כל מי ששילם לך משכורת באותה שנה.<br>
-    (ב) <b>"טופס 106"</b>: אחד לכל מעסיק ברשימה.<br>
+  <li>במסך <b>"מידע מרוכז מהמעסיקים"</b> מורידים <b>שני סוגי קבצים</b>:<br>
+    (א) לוחצים על הקישור <b>"למסמך ריכוז הכנסות"</b> (ליד הכותרת): קובץ אחד, הרשימה של כל מי ששילם לך משכורת באותה שנה.<br>
+    (ב) ליד כל מעסיק ברשימה לוחצים <b>"להצגת טופס 106"</b> ושומרים את הקובץ: אחד לכל מעסיק.<br>
     <span class="small muted">הטעות הנפוצה: להוריד רק את ה-106 ולשכוח את הריכוז. בלי הריכוז אין לנו דרך לדעת שלא חסר מעסיק.</span></li></ol></details>`;
 const HOWTO_BTL = `<details class="howto" open><summary>איך מורידים מביטוח לאומי</summary><ol>
   <li><b>כניסה:</b> <a class="btn small-btn" href="${BTL_LOGIN}" target="_blank" rel="noopener">פתיחת האזור האישי בביטוח לאומי ←</a> ואז בתפריט <b>"אישורים"</b>.</li>
@@ -153,7 +153,7 @@ function docsState(base, year) {
   const docs = get(`${base}.docs`) || [];
   const s = summarizeDocs(docs, year);
   const need = [];
-  if (!s.summary) need.push('ריכוז נתוני שכר מכלל המעסיקים (רשות המסים)');
+  if (!s.summary) need.push('ריכוז הכנסות מכל המעסיקים (רשות המסים: הקישור "למסמך ריכוז הכנסות")');
   for (const e of s.missing) need.push(`טופס 106 של ${e.name} (תיק ניכויים ${e.taxFile})`);
   if (!s.btlAnnual) need.push('אישור תשלומים שנתי (ביטוח לאומי)');
   const btl = [];
@@ -177,15 +177,15 @@ function checklist(base, year, who) {
   const { s, btl } = docsState(base, year);
   const docs = get(`${base}.docs`) || [];
   const mark = (ok) => ok ? '<span class="ok">✓ הועלה</span>' : '<span class="todo">☐ עוד לא</span>';
-  const tax = [[`"ריכוז נתוני שכר מכלל המעסיקים" ${year}`, !!s.summary]];
-  if (s.summary) for (const e of s.expected) tax.push([`"טופס 106" של ${e.name}`, !s.missing.some((m) => m.taxFile === e.taxFile)]);
-  else tax.push([`"טופס 106" מכל מעסיק (אחרי שתעלה את הריכוז נראה כאן את כולם)`, docs.some((d) => d.type === '106')]);
+  const tax = [[`"למסמך ריכוז הכנסות" ${year} (ריכוז נתוני שכר)`, !!s.summary]];
+  if (s.summary) for (const e of s.expected) tax.push([`"להצגת טופס 106" של ${e.name}`, !s.missing.some((m) => m.taxFile === e.taxFile)]);
+  else tax.push([`"להצגת טופס 106" ליד כל מעסיק (אחרי שתעלה את הריכוז נראה כאן את כולם)`, docs.some((d) => d.type === '106')]);
   const bl = [[`"אישור תשלומים שנתי" ${year}`, !!s.btlAnnual]];
   for (const b of s.btlAnnual?.benefits || []) bl.push([`"אישור שנתי למס הכנסה" על ${BTL_LABELS[b.kind]}`, btl.some((x) => x.kind === b.kind && x.taxWithheld != null)]);
   if (get(`${base}.miluimDirect`) === 'yes') bl.push(['"אישור שנתי למס הכנסה על תשלום תגמולי מילואים"', s.certs.some((c) => c.kind === 'miluim')]);
   const rows = (list) => list.map(([n, ok]) => `<tr><td>${mark(ok)}</td><td><b>${esc(n)}</b></td></tr>`).join('');
   return `<div class="card sub checklist"><b>מה צריך להוריד ${who === 'spouse' ? 'לבן/בת הזוג' : ''} לשנת ${year}</b>
-    <table class="files"><tr><td colspan="2" class="small muted">מרשות המסים (האזור האישי ← "טפסי 106")</td></tr>${rows(tax)}
+    <table class="files"><tr><td colspan="2" class="small muted">מרשות המסים (האזור האישי ← "טפסי 106" ← "מידע מרוכז מהמעסיקים")</td></tr>${rows(tax)}
     <tr><td colspan="2" class="small muted">מביטוח לאומי (האזור האישי ← "אישורים")</td></tr>${rows(bl)}</table>
     <div class="small muted">הרשימה מתעדכנת לבד אחרי שמעלים קבצים.</div></div>`;
 }
@@ -238,7 +238,7 @@ function renderManualDocs(q, base, who, year) {
   let html = `<h3>מסמכים ${pron} לשנת ${year}: הקלדה ידנית</h3>
     <p><button class="btn link" type="button" data-mode="${base}|upload">חזרה להעלאת קבצים (מומלץ)</button></p>
     ${HOWTO_SUMMARY}
-    ${q.num(`${base}.employersCount`, `כמה מעסיקים מופיעים ב"ריכוז נתוני שכר מכלל המעסיקים" ${pron} לשנת ${year}?`,
+    ${q.num(`${base}.employersCount`, `כמה מעסיקים מופיעים במסך "מידע מרוכז מהמעסיקים" ברשות המסים ${pron} לשנת ${year}?`,
       'אם לא עבדת בכלל בשנה הזו, כתבו 0.', { max: 12 })}`;
   const n = Math.min(Number(get(`${base}.employersCount`)) || 0, 12);
   for (let i = 0; i < n; i++) {
