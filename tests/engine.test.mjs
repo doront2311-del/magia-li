@@ -44,12 +44,58 @@ test('מדריך 1301 למקרה 2020: 158, 194, 042', () => {
   assert.equal(v('042'), (9_089).toLocaleString('he-IL'));
 });
 
-test('כלל לא מאומת עוצר את השנה (ילדים)', () => {
+test('פרטי ילדים חסרים: הערכה חלקית בלי הנקודות, לא חסימה', () => {
   const c = structuredClone(case2020);
+  const full = computeYear(2020, c);
   c.people[0].flags.kids = true;
   const r = computeYear(2020, c);
-  assert.equal(r.status, 'blocked');
-  assert.match(r.blocks.join(), /ילדים/);
+  assert.equal(r.status, 'refund');
+  assert.equal(r.partial, true);
+  assert.equal(r.direction, 'up');
+  assert.equal(r.balance, full.balance);
+  assert.match(r.excluded.map((e) => e.label).join(), /ילדים/);
+});
+
+test('נתונים מלאים: לא מסומן כהערכה חלקית', () => {
+  const r = computeYear(2020, structuredClone(case2020));
+  assert.equal(r.partial, false);
+  assert.equal(r.direction, null);
+  assert.deepEqual(r.missingDocs, []);
+});
+
+test('ביטוח חיים (כלל לא מאומת): לא נכלל, והאישור מחברת הביטוח ברשימת המסמכים', () => {
+  const c = structuredClone(case2020);
+  const full = computeYear(2020, c);
+  c.people[0].credits = { lifeInsurance: 1_200 };
+  const r = computeYear(2020, c);
+  assert.equal(r.status, 'refund');
+  assert.equal(r.balance, full.balance);
+  assert.equal(r.direction, 'up');
+  assert.match(r.excluded[0].label, /ביטוח חיים/);
+  assert.match(r.missingDocs.join(), /חברת הביטוח/);
+});
+
+test('פריט שיכול לשנות לשני הכיוונים: direction = either', () => {
+  const c = structuredClone(case2020);
+  c.people[0].excluded = [{ label: 'תשלומים מביטוח לאומי', effect: 'either', doc: 'אישור תשלומים שנתי', kind: 'doc' }];
+  c.people[0].credits = { lifeInsurance: 1_200 };
+  const r = computeYear(2020, c);
+  assert.equal(r.direction, 'either');
+  assert.equal(r.missingDocs.length, 2);
+});
+
+test('חסימה קשה מבחוץ (למשל בלי ריכוז הכנסות) עדיין חוסמת', () => {
+  const c = structuredClone(case2020);
+  c.people[0].blocks = ['חסר ריכוז הכנסות'];
+  assert.equal(computeYear(2020, c).status, 'blocked');
+});
+
+test('מסמך לצירוף בלבד נכנס לרשימת המסמכים בלי לסמן את ההערכה כחלקית', () => {
+  const c = structuredClone(case2020);
+  c.people[0].filingDocs = ['אישור תושבות'];
+  const r = computeYear(2020, c);
+  assert.equal(r.partial, false);
+  assert.deepEqual(r.missingDocs, ['אישור תושבות']);
 });
 
 test('הטבת יישוב בתלוש בלי מגורים בפועל = הפניה לרו"ח', () => {
@@ -58,10 +104,16 @@ test('הטבת יישוב בתלוש בלי מגורים בפועל = הפניה
   assert.equal(computeYear(2020, c).status, 'cpa');
 });
 
-test('מס ביטוח לאומי לא ידוע עוצר (אפס הנחות)', () => {
+test('מס ביטוח לאומי לא ידוע: לא נכלל (לא מנחשים), ההחזר רק יכול לעלות', () => {
   const c = structuredClone(case2020);
+  const full = computeYear(2020, c);
+  const tax = c.people[0].btl[1].taxWithheld;
   c.people[0].btl[1].taxWithheld = null;
-  assert.equal(computeYear(2020, c).status, 'blocked');
+  const r = computeYear(2020, c);
+  assert.notEqual(r.status, 'blocked');
+  assert.equal(r.balance, full.balance - tax);
+  assert.equal(r.direction, 'up');
+  assert.match(r.missingDocs.join(), /אישור שנתי למס הכנסה/);
 });
 
 test('נשואים: כל אחד ממוסה בנפרד, היתרה מצטברת', () => {
@@ -138,9 +190,12 @@ test('יישוב מזכה: 12% עד 196,080, 6 חודשים', () => {
   assert.equal(r.results[0].lines.settlementCredit, Math.round(0.12 * 98_040));
 });
 
-test('יישוב מזכה בלי טבלה לשנה = עצירה עם הסבר', () => {
+test('יישוב מזכה בלי טבלה לשנה = הערכה בלי ההטבה, עם הסבר', () => {
   const p = person({ settlement: { livedMonths: 12, rate: 0, ceiling: 0, missing: 'אין טבלה' } });
-  assert.equal(computeYear(2022, { people: [p] }).status, 'blocked');
+  const r = computeYear(2022, { people: [p] });
+  assert.notEqual(r.status, 'blocked');
+  assert.equal(r.results[0].lines.settlementCredit, 0);
+  assert.match(r.excluded[0].label, /אין טבלה/);
 });
 
 test('טבלת היישובים: שניר 12% בכל השנים, והתקרות תואמות את לוח העזר', async () => {

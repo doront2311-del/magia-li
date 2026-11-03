@@ -37,44 +37,53 @@ function neededRules(p) {
   return need;
 }
 
+// פריט שלא נכלל בחישוב. לא מנחשים אותו: הוא פשוט בחוץ, והתוצאה מסומנת בכוכבית.
+//   effect 'up'     – הפריט יכול רק להגדיל את ההחזר (זיכוי, ניכוי, מס שנוכה). ההחזר בפועל יהיה לפחות ההערכה.
+//   effect 'either' – הפריט יכול לשנות את התוצאה לשני הכיוונים (למשל הכנסה שלא ידועה). אסור להגיש לפי ההערכה.
+//   kind 'doc'  – חסר מסמך שהמשתמש יכול להשיג. kind 'rule' – הכלל עוד לא אומת אצלנו (גם אז יש מסמך שיצטרכו בהגשה).
+export const excluded = (label, effect, doc, kind = 'doc') => ({ label, effect, doc: doc || null, kind });
+
 // חישוב לאדם אחד בשנה אחת.
 export function computePerson(year, p) {
   const yp = PARAMS[year];
-  const blocks = [];  // פרמטר חסר / לא מאומת: אי אפשר לחשב עדיין
+  const blocks = [];  // בלי זה אין בסיס לחישוב בכלל (מדרגות, ערך נקודה, ריכוז הכנסות)
   const stops = [];   // מקרה ספק: להפנות לרואה חשבון
+  const out = [...(p.excluded || [])]; // לא נכלל בהערכה (ראו excluded למעלה)
 
-  if (!yp) return { blocks: [`אין פרמטרים לשנת ${year}`], stops, lines: null };
+  if (!yp) return { blocks: [`אין פרמטרים לשנת ${year}`], stops, excluded: out, lines: null };
+  for (const b of p.blocks || []) blocks.push(b);
   for (const key of ['brackets', 'creditPointValue']) {
     if (!ALLOWED.has(yp[key].status)) blocks.push(`${key === 'brackets' ? 'מדרגות המס' : 'ערך נקודת זיכוי'} לשנת ${year} עוד לא אומתו`);
   }
   const pensionNeeded = sum(p.employers, 'pensionDeposit') > 0;
-  if (pensionNeeded && !ALLOWED.has(yp.pensionIncomeCeiling?.status)) blocks.push(`תקרת ההכנסה המזכה לפנסיה לשנת ${year} עוד לא אומתה`);
+  const pensionOk = pensionNeeded && ALLOWED.has(yp.pensionIncomeCeiling?.status);
+  if (pensionNeeded && !pensionOk) out.push(excluded(`זיכוי על הפקדות לפנסיה (תקרת ההכנסה המזכה לשנת ${year} עוד לא אומתה)`, 'up', null, 'rule'));
   // ילדים: flags.kids = { ages: [...], column: 'mother'|'father' }. true בלבד (בלי פרטים) = חסום.
   let kidPoints = 0;
   const k = p.flags?.kids;
   if (k) {
     if (k.notWithMe) stops.push('הילדים לא גרים איתך. במקרה כזה נקודות הזיכוי תלויות בהסדרי המשמורת ובמזונות. מומלץ רואה חשבון לשנה הזו.');
-    else if (!k.ages || !k.column) blocks.push('נקודות זיכוי בעד ילדים: חסרים פרטים (גילאי הילדים, ומי מקבל את קצבת הילדים)');
+    else if (!k.ages || !k.column) out.push(excluded('נקודות זיכוי בעד ילדים (חסרים פרטים: גילאי הילדים, ומי מקבל את קצבת הילדים)', 'up', null, 'answer'));
     else {
       const cp = childPoints(year, k.column, k.ages);
-      if (cp.missing) blocks.push(cp.missing); else kidPoints = cp.points;
+      if (cp.missing) out.push(excluded(cp.missing, 'up', null, 'rule')); else kidPoints = cp.points;
     }
   }
   for (const msg of p.flags?.stop || []) stops.push(msg);
   for (const r of neededRules(p)) {
     if (r === 'childrenPoints') continue; // נבדק למעלה לפי שנה וגיל
     if (r === 'dischargedSoldierCareer') { stops.push('שירות קבע מיד אחרי השירות הסדיר משנה את חישוב נקודות החייל המשוחרר, והמקורות לא מסכימים איך. מומלץ רואה חשבון לשנה הזו.'); continue; }
-    if (!ALLOWED.has(RULES[r].status)) blocks.push(`${RULES[r].label}: הכלל עוד לא אומת באפליקציה`);
+    if (!ALLOWED.has(RULES[r].status)) out.push(excluded(`${RULES[r].label} (הכלל עוד לא אומת באפליקציה)`, 'up', RULES[r].doc, 'rule'));
   }
   if ((p.settlement?.livedMonths || 0) > 0 && !(p.settlement.rate > 0)) {
-    blocks.push(p.settlement.missing || `הטבת יישוב מזכה: אין לנו עדיין את טבלת היישובים הרשמית לשנת ${year}`);
+    out.push(excluded(`הטבת יישוב מזכה. ${p.settlement.missing || `אין לנו עדיין את טבלת היישובים הרשמית לשנת ${year}`}`, 'up', null, 'rule'));
   }
   if ((p.settlement?.employerGave || 0) > 0 && !(p.settlement?.livedMonths > 0)) {
     stops.push('בטופס 106 המעסיק נתן הטבת יישוב (קוד 093/193), אבל ענית שלא גרת ביישוב מזכה. לפני הגשה לשנה הזו מומלץ להתייעץ עם רואה חשבון, כי ההגשה פותחת את השנה לבדיקה.');
   }
   for (const btl of p.btl || []) {
     if (btl.taxWithheld === null || btl.taxWithheld === undefined || btl.taxWithheld === '') {
-      blocks.push(`חסר סכום המס שנוכה מ${btl.label || 'תשלום ביטוח לאומי'}. צריך את האישור השנתי למס הכנסה מביטוח לאומי`);
+      out.push(excluded(`המס שנוכה מ${btl.label || 'תשלום ביטוח לאומי'} (ההכנסה עצמה כן נכללה)`, 'up', `אישור שנתי למס הכנסה על ${btl.label || 'התשלום'} (ביטוח לאומי)`));
     }
   }
 
@@ -95,7 +104,7 @@ export function computePerson(year, p) {
   const pointsCredit = Math.round(points * yp.creditPointValue.value);
   // פנסיה (45א): 35% מההפקדה, עד 7% מההכנסה המזכה. ההכנסה המזכה = ההכנסה המבוטחת (244/245) או המשכורת, עד התקרה השנתית.
   let pensionCredit = 0;
-  if (pensionNeeded && yp.pensionIncomeCeiling) {
+  if (pensionOk) {
     const pc = RULES.pensionCredit.value;
     const base = Math.min(sum(p.employers.map((e) => ({ v: e.insuredIncome > 0 ? e.insuredIncome : e.income })), 'v'), yp.pensionIncomeCeiling.value * 12);
     pensionCredit = Math.round(pc.rate * Math.min(sum(p.employers, 'pensionDeposit'), pc.share * base));
@@ -110,7 +119,7 @@ export function computePerson(year, p) {
   if (don > 0) {
     const dc = RULES.donationsCredit.value;
     const mm = dc.byYear[year];
-    if (!mm) blocks.push(`זיכוי על תרומות: הסכום המינימלי והתקרה לשנת ${year} עוד לא אומתו`);
+    if (!mm) out.push(excluded(`זיכוי על תרומות (הסכום המינימלי והתקרה לשנת ${year} עוד לא אומתו)`, 'up', 'קבלות על התרומות (סעיף 46)', 'rule'));
     else if (don >= mm[0]) donationsCredit = Math.round(dc.rate * Math.min(don, dc.incomeShare * taxable, mm[1]));
   }
   const credits = pointsCredit + pensionCredit + settlementCredit + donationsCredit;
@@ -119,7 +128,7 @@ export function computePerson(year, p) {
   const balance = withheld - taxDue;
 
   return {
-    blocks, stops,
+    blocks, stops, excluded: out,
     lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, kidPoints, pointsCredit, pensionCredit, settlementCredit, donationsCredit, credits, taxDue, withheld, balance },
   };
 }
@@ -154,14 +163,21 @@ export function computeYear(year, yearCase, today = new Date()) {
   const results = people.map((p) => ({ role: p.role, ...computePerson(year, p) }));
   const blocks = results.flatMap((r) => r.blocks.map((b) => (r.role === 'spouse' ? `בן/בת הזוג: ${b}` : b)));
   const stops = [...new Set(results.flatMap((r) => r.stops))];
-  if (blocks.length) return { year, status: 'blocked', blocks, stops, results };
+  const seen = new Set();
+  const excl = results.flatMap((r) => r.excluded.map((e) => (r.role === 'spouse' ? { ...e, label: `בן/בת הזוג: ${e.label}` } : e)))
+    .filter((e) => !seen.has(e.label) && seen.add(e.label));
+  // מסמכים שחסרים: כל מה שמשפיע על ההערכה, ועוד מסמכים שצריך רק לצירוף בהגשה (filingDocs).
+  const missingDocs = [...new Set([...excl.map((e) => e.doc), ...results.flatMap((r) => people.find((p) => p.role === r.role)?.filingDocs || [])].filter(Boolean))];
+  const partial = excl.length > 0;
+  const direction = excl.some((e) => e.effect === 'either') ? 'either' : partial ? 'up' : null;
+  if (blocks.length) return { year, status: 'blocked', blocks, stops, results, excluded: excl, missingDocs, partial, direction };
 
   const balance = results.reduce((s, r) => s + r.lines.balance, 0);
   const reasons = [...new Set(results.flatMap((r, i) => reasonsFor(people[i], r.lines)))];
   const indexation = estimateIndexation(balance, year, today);
   let status = balance > 0 ? 'refund' : balance < 0 ? 'debt' : 'zero';
   if (stops.length) status = 'cpa';
-  return { year, status, balance, indexation, reasons, blocks, stops, results };
+  return { year, status, balance, indexation, reasons, blocks, stops, results, excluded: excl, missingDocs, partial, direction };
 }
 
 // טווח סכומים לאנליטיקס אנונימי. אף פעם לא שולחים סכום מדויק.
