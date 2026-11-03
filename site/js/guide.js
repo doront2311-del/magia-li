@@ -30,7 +30,7 @@ export function buildGuide(year, yearCase, result) {
     title: 'פרטים אישיים',
     fields: [
       { field: 'מצב משפחתי', value: MARITAL_1301[yearCase.maritalStatus] || yearCase.maritalStatus, source: `תשובה: מצב משפחתי ב-${year}` },
-      { field: 'שמות המעבידים', value: employerNames.join(', '), source: 'טופסי 106 שהזנת' },
+      { field: 'שמות המעבידים', value: employerNames.join(', '), source: 'טופסי ה-106 שהעלית' },
       { field: 'פרטי בנק (278/277)', value: 'סמל בנק, סניף, מספר חשבון, שם בעל החשבון (על שמך)', source: 'אישור ניהול חשבון' },
       { field: '"נעזרתי במילוי, תמורת תשלום"', value: 'לא לסמן', source: 'האפליקציה חינמית ולא נחשבת מייצג' },
     ],

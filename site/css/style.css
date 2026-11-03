@@ -119,3 +119,16 @@ table.files td.actions { white-space: nowrap; text-align: left; }
 .viewer-bar .spacer { flex: 1; }
 .viewer-pages { width: 100%; max-width: 920px; overflow: auto; flex: 1; background: var(--line); padding: 10px; display: flex; flex-direction: column; align-items: center; gap: 10px; border-radius: 0 0 var(--radius) var(--radius); }
 .viewer-pages canvas { background: #fff; max-width: 100%; height: auto !important; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+
+/* המסמך המסכם: הדפסה / שמירה כ-PDF */
+.guide-year { margin-top: 28px; }
+.guide-year > h2 { border-bottom: 2px solid var(--brand); padding-bottom: 4px; }
+@media print {
+  :root { --bg: #fff; --card: #fff; --text: #000; --muted: #444; --line: #bbb; }
+  body { background: #fff !important; color: #000; }
+  .brand, .progress, footer, #stuck, .noprint, .copy, [data-nav], .viewer { display: none !important; }
+  .card { break-inside: avoid; border-color: #bbb; }
+  .guide-year { break-before: page; }
+  a { color: #000; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.75em; word-break: break-all; }
+}

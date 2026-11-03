@@ -453,6 +453,8 @@ function renderResults() {
   const totalIdx = refunds.reduce((s, r) => s + (r.indexation || 0), 0);
   let html = `<h1>התוצאה</h1>`;
   if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ החזר צפוי ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}</div><div class="amount">${fmt(total)} ₪</div><div>ועוד כ-${fmt(totalIdx)} ₪ הצמדה וריבית (הערכה)</div></div>`;
+  if (refunds.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה, לכל ${refunds.length === 1 ? 'השנה' : `${refunds.length} השנים`} עם החזר. אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
+  else html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך נוצר לכל שנה שיוצאת בהחזר: שלב-אחר-שלב באתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. כרגע אין שנה כזו${rs.some((r) => r.status === 'blocked') ? '. בשנים שמסומנות "עוד אי אפשר לחשב" כתוב מה חסר, ואחרי שזה יושלם המסמך יופיע כאן' : ''}.</p></div>`;
   html += '<div class="row"><button class="btn secondary" type="button" data-go="years">חזרה לתיקון התשובות</button></div>';
   html += '<p class="muted small">החישוב לפי מה שמסרת. לפני כל הגשה תלחצו על "חישוב" באתר רשות המסים ותשוו למספרים כאן.</p>';
   for (const r of rs) {
@@ -484,37 +486,63 @@ function renderResults() {
   return html;
 }
 
-// ---------- step: guide ----------
-function renderGuide() {
-  const year = state.ui.guideYear;
+// ---------- step: guide (המסמך המסכם) ----------
+function guideTabs(year) {
   const r = resultFor(year);
   const g = buildGuide(year, caseFor(year), r);
-  let html = `<h1>מדריך הגשה ל-${year}</h1>
-    <p>ממלאים את הטופס לפי הסדר כאן. רק השדות שכתובים כאן ממלאים, כל השאר נשארים ריקים. ליד כל ערך כתוב מאיפה הוא הגיע.</p>
-    <div class="notice info">הכינו לפני שנכנסים: את כל הקבצים, פרטי חשבון בנק, ובערך 40 דקות רצופות. המערכת מנתקת אחרי זמן, אז לוחצים "שמירה" אחרי כל לשונית.</div>
-    <p><a href="https://www.gov.il/he/service/itc135" target="_blank" rel="noopener">לאתר רשות המסים ←</a></p>`;
+  let html = '';
   g.tabs.forEach((t, i) => {
-    html += `<div class="card"><h2 style="margin-top:0">${i + 1}. ${t.title}</h2>`;
-    if (t.steps) html += `<ol>${t.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>`;
+    html += `<div class="card"><h3 style="margin-top:0">${i + 1}. ${t.title}</h3>`;
+    if (t.steps) html += `<ol>${t.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>`;
     if (t.fields.length) {
-      html += `<table class="fields">${t.fields.map((f) => `<tr><td><b>${esc(f.field)}</b><div class="src">מקור: ${esc(f.source)}</div></td><td>${esc(f.value)}</td><td><button class="copy" type="button" data-copy="${esc(String(f.value).replace(/,/g, ''))}">העתקה</button></td></tr>`).join('')}</table>`;
+      html += `<table class="fields">${t.fields.map((f) => `<tr><td><b>${esc(f.field)}</b><div class="src">מקור: ${esc(f.source)}</div></td><td>${esc(f.value)}</td><td class="noprint">${/\d/.test(f.value) || f.field === 'שמות המעבידים' ? `<button class="copy" type="button" data-copy="${esc(String(f.value).replace(/,/g, ''))}">העתקה</button>` : ''}</td></tr>`).join('')}</table>`;
     }
     if (t.note) html += `<p class="small muted">${esc(t.note)}</p>`;
     html += '</div>';
   });
-  html += '<button class="btn" type="button" data-go="after">הגשתי, מה עכשיו?</button> <button class="btn link" type="button" data-go="results">חזרה לתוצאות</button>';
+  return { html, r };
+}
+
+function renderGuide() {
+  const sel = get('screen.selectedYears') || [];
+  const one = state.ui.guideYear !== 'all' && Number(state.ui.guideYear);
+  const years = one ? [one] : sel.filter((y) => resultFor(y).status === 'refund');
+  const rs = years.map((y) => resultFor(y));
+  const total = rs.reduce((t, r) => t + r.balance, 0);
+  const today = new Date().toLocaleDateString('he-IL');
+  let html = `<div class="row noprint"><button class="btn" type="button" id="printBtn">הורדה כ-PDF / הדפסה</button><button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>
+    <h1>${one ? `מדריך הגשה ל-${one}` : 'המסמך המסכם להגשת החזר מס'}</h1>
+    <p class="muted small">הופק ב"מגיע לי" בתאריך ${today}, לפי התשובות והמסמכים שהעלית. זה לא ייעוץ מס. לפני כל הגשה לוחצים "חישוב" באתר רשות המסים ומשווים.</p>
+    <div class="card"><h2 style="margin-top:0">סיכום</h2><table class="calc">
+      ${rs.map((r) => `<tr><td>${r.year}<div class="muted small">מועד אחרון להגשה: ${deadline(r.year)}</div></td><td class="num">${fmt(r.balance)} ₪</td></tr>`).join('')}
+      ${rs.length > 1 ? `<tr><td><b>סה"כ</b><div class="muted small">ועוד כ-${fmt(rs.reduce((t, r) => t + (r.indexation || 0), 0))} ₪ הצמדה וריבית (הערכה)</div></td><td class="num"><b>${fmt(total)} ₪</b></td></tr>` : ''}
+    </table></div>
+    <div class="card"><h2 style="margin-top:0">לפני שמתחילים</h2><ul>
+      <li>כמה זמן: בערך 40 דקות רצופות לכל שנה. המערכת מנתקת אחרי זמן, אז לוחצים "שמירה" אחרי כל לשונית.</li>
+      <li>כניסה: <a href="https://www.gov.il/he/service/itc135" target="_blank" rel="noopener">השירות "הגשת דו"ח שנתי / בקשה להחזר מס" באתר רשות המסים</a>. מזדהים עם תעודת זהות, קוד משתמש וקוד חד-פעמי.</li>
+      <li>מגישים כל שנה בנפרד, לפי הסדר במסמך הזה. כל שנה היא דו"ח משלה.</li>
+      <li>את הקבצים שצריך לצרף לכל שנה תמצאו בסוף הפרק של אותה שנה. אפשר להוריד אותם מהאפליקציה בשם ברור (בשלב "שנים ומסמכים").</li></ul></div>`;
+  for (const y of years) {
+    html += `<section class="guide-year"><h2>שנת ${y}: ${fmt(resultFor(y).balance)} ₪</h2>${guideTabs(y).html}</section>`;
+  }
+  html += `<section class="guide-year"><h2>אחרי ההגשה</h2>${afterBody()}</section>`;
+  html += '<div class="row noprint"><button class="btn" type="button" data-go="after">הגשתי, מה עכשיו?</button> <button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>';
   return html;
 }
 
-function renderAfter() {
-  return `<h1>אחרי ההגשה</h1>
-  <div class="card"><h3 style="margin-top:0">לשמור</h3><ul>
+function afterBody() {
+  return `<div class="card"><h3 style="margin-top:0">לשמור</h3><ul>
     <li>PDF של מסך "אישור הגשת הדו"ח" (תיק + שנה + גרסה = המזהה של ההגשה)</li>
     <li>PDF של נתוני הדיווח</li>
     <li>את כל המסמכים שצירפת, וקבלות תרומה אם יש</li></ul></div>
   <div class="card"><h3 style="margin-top:0">לעקוב</h3>
     <p>במסך הכניסה של 1301: מספר תיק + שנה, ואז "בדיקת מצב שידור דו"ח שנתי ליחיד". כשההחזר מאושר תופיע "הודעת שומה" עם הסכום. כדאי לבדוק כל 2–3 שבועות.</p>
-    <p>אם פקיד השומה מבקש מסמך: מעלים אותו דרך "הוספת מסמכים לאחר הגשת הדו"ח".</p></div>
+    <p>אם פקיד השומה מבקש מסמך: מעלים אותו דרך "הוספת מסמכים לאחר הגשת הדו"ח".</p></div>`;
+}
+
+function renderAfter() {
+  return `<h1>אחרי ההגשה</h1>
+  ${afterBody()}
   <div class="card"><p>עזרנו? ספרו לחברים שכירים. רוב האנשים לא יודעים שמגיע להם.</p>
     <button class="btn" type="button" id="filedBtn">${state.ui.filed ? 'תודה! נרשם ✓' : 'סמנו שהגשתם (אנונימי)'}</button></div>
   <button class="btn link" type="button" data-go="results">חזרה לתוצאות</button>`;
@@ -654,7 +682,8 @@ app.addEventListener('click', async (ev) => {
     return go(STEPS[STEPS.indexOf(state.step) + 1]);
   }
   if (t.dataset.edit) { state.ui.year = Number(t.dataset.edit); return go('years'); }
-  if (t.dataset.guide) { state.ui.guideYear = Number(t.dataset.guide); track('guide_open'); return go('guide'); }
+  if (t.id === 'printBtn') { track('guide_print'); window.print(); return; }
+  if (t.dataset.guide) { state.ui.guideYear = t.dataset.guide === 'all' ? 'all' : Number(t.dataset.guide); track('guide_open'); return go('guide'); }
   if (t.dataset.go) return go(t.dataset.go);
   if (t.dataset.copy !== undefined) {
     try { await navigator.clipboard.writeText(t.dataset.copy); t.textContent = 'הועתק ✓'; } catch { t.textContent = 'לא הצלחתי'; }
