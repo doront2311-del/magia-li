@@ -138,3 +138,5 @@ table.files td.actions { white-space: nowrap; text-align: left; }
 .checklist .ok { color: var(--ok, #1a7f37); font-weight: 600; white-space: nowrap; }
 .checklist .todo { color: var(--warn, #9a6700); font-weight: 600; white-space: nowrap; }
 .howto .btn.small-btn { display: inline-block; padding: 6px 12px; margin: 4px 0; font-size: .95em; text-decoration: none; }
+.red-star { color: var(--bad); font-weight: 800; }
+sup.red-star { font-size: 0.6em; margin-inline-start: 2px; }

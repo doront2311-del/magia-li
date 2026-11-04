@@ -6,6 +6,42 @@
 
 import { PARAMS, RULES, ALLOWED, childPoints } from './params.js';
 
+// מס על "פרוסה" של הכנסה שיושבת מעל הכנסה אחרת (למשל שכר דירה מעל המשכורת), כשבכל מדרגה השיעור לפחות minRate.
+export function taxOnSlice(base, add, brackets, minRate = 0) {
+  let tax = 0, low = 0;
+  const top = base + add;
+  for (const [hi, rate] of brackets) {
+    const a = Math.max(low, base), z = Math.min(hi, top);
+    if (z > a) tax += (z - a) * Math.max(rate, minRate);
+    low = hi;
+  }
+  return tax;
+}
+
+// החלק החייב במס משכר דירה למגורים במסלול הפטור, לפי הסכום בכל חודש (ראו RULES.rentPartialExemption).
+export function rentTaxablePart(monthly, ceiling) {
+  return (monthly || []).reduce((t, r) => {
+    const v = Number(r) || 0;
+    if (v <= ceiling) return t;
+    if (v >= 2 * ceiling) return t + v;
+    return t + 2 * (v - ceiling);
+  }, 0);
+}
+
+// שוק ההון לאדם אחד: מס לפי השיעור שבטופס 867, אחרי קיזוז הפסדים מרווחים. הפסד שנשאר לא מקוזז מדיבידנד או
+// ריבית (הכלל עוד לא אומת), והוא יוצא כפריט "לא נכלל" שיכול רק להגדיל את ההחזר.
+export function capitalTax(cap) {
+  const gains = Object.entries(cap.gains || {}).map(([r, v]) => ({ rate: Number(r) / 100, v: Number(v) || 0 })).sort((a, b) => b.rate - a.rate);
+  let loss = Number(cap.losses) || 0;
+  for (const g of gains) { const use = Math.min(loss, g.v); g.v -= use; loss -= use; }
+  const flat = (o) => Object.entries(o || {}).reduce((t, [r, v]) => t + Number(r) / 100 * (Number(v) || 0), 0);
+  const tax = gains.reduce((t, g) => t + g.rate * g.v, 0) + flat(cap.dividends) + flat(cap.interest);
+  const sumO = (o) => Object.values(o || {}).reduce((t, v) => t + (Number(v) || 0), 0);
+  const income = gains.reduce((t, g) => t + g.v, 0) + sumO(cap.dividends) + sumO(cap.interest);
+  const otherIncome = sumO(cap.dividends) + sumO(cap.interest);
+  return { tax: Math.round(tax), income, lossLeft: loss, lossOffsetPossible: loss > 0 && otherIncome > 0, withheld: Number(cap.withheld) || 0 };
+}
+
 export function taxOnIncome(income, brackets) {
   let tax = 0, low = 0;
   for (const [top, rate] of brackets) {
@@ -89,11 +125,25 @@ export function computePerson(year, p) {
 
   const salary = sum(p.employers, 'income');                // 158 / 172
   const btlIncome = sum(p.btl, 'gross');                    // 194 / 196
-  const totalIncome = salary + btlIncome;
+  const workIncome = salary + btlIncome;                    // הכנסה מיגיעה אישית
+  // שכר דירה מעל תקרת הפטור (059): הכנסה שלא מיגיעה אישית, מעל ההכנסה מעבודה, החל מ-31% מתחת לגיל 60.
+  const rentTaxable = Math.round(Number(p.rent?.taxable) || 0);
+  const rr = RULES.rentPartialExemption;
+  if (rentTaxable > 0 && !ALLOWED.has(rr.status)) blocks.push(`${rr.label}: הכלל עוד לא אומת`);
+  const totalIncome = workIncome + rentTaxable;
   const deductions = 0;                                     // ניכויים: כולם חסומים כרגע (ראו RULES)
   const taxable = totalIncome - deductions;
   // רשות המסים עיגלה כלפי מטה במקרה 2020 (7,061.7 → 7,061). כויל ממקרה אחד.
-  const grossTax = Math.floor(taxOnIncome(taxable, yp.brackets.value));
+  const rentTax = rentTaxable > 0 ? taxOnSlice(workIncome, rentTaxable, yp.brackets.value, p.rent.age60 ? 0 : rr.value.minRateUnder60) : 0;
+  const grossTax = Math.floor(taxOnIncome(workIncome, yp.brackets.value) + rentTax);
+  // שוק ההון (טופס 867): מס בשיעור קבוע, מחוץ למדרגות.
+  let cap = null;
+  if (p.capital) {
+    cap = capitalTax(p.capital);
+    if (cap.lossOffsetPossible) out.push(excluded(`קיזוז יתרת הפסד ההון (${Math.round(cap.lossLeft).toLocaleString('he-IL')} ₪) מהדיבידנד והריבית (${RULES.capitalLossVsDividends.label}: הכלל עוד לא אומת)`, 'up', null, 'rule'));
+    if (p.capital.oilGains > 0) stops.push('בטופס 867 יש רווח ממכירת יחידות השתתפות (למשל בשותפות נפט). את המס עליו האפליקציה עוד לא מחשבת. מומלץ רואה חשבון לשנה הזו.');
+    if (p.capital.foreignTax > 0) stops.push('בטופס 867 יש מס ששולם בחו"ל. זיכוי ממס זר עוד לא נתמך באפליקציה. מומלץ רואה חשבון לשנה הזו.');
+  }
   // חייל משוחרר: חלק יחסי לפי מספר החודשים בשנה הזו שבתוך 36 החודשים.
   const ds = p.flags?.dischargedSoldier;
   const soldierPoints = ds && ds.months > 0 ? (RULES.dischargedSoldierPoints.value[ds.level] || 0) * ds.months / 12 : 0;
@@ -112,7 +162,7 @@ export function computePerson(year, p) {
   // יישוב מזכה (סעיף 11): אחוז × ההכנסה מעבודה, עד התקרה השנתית כפול חלק השנה שבו גרו שם.
   let settlementCredit = 0;
   const st = p.settlement || {};
-  if (st.livedMonths > 0 && st.rate > 0) settlementCredit = Math.round(st.rate / 100 * Math.min(totalIncome, st.ceiling * st.livedMonths / 12));
+  if (st.livedMonths > 0 && st.rate > 0) settlementCredit = Math.round(st.rate / 100 * Math.min(workIncome, st.ceiling * st.livedMonths / 12));
   // תרומות (סעיף 46): 35%, רק אם סך התרומות בשנה לפחות המינימום. מוכר עד 30% מההכנסה החייבת ועד המקסימום.
   let donationsCredit = 0;
   const don = Number(p.credits?.donations) || 0;
@@ -122,14 +172,20 @@ export function computePerson(year, p) {
     if (!mm) out.push(excluded(`זיכוי על תרומות (הסכום המינימלי והתקרה לשנת ${year} עוד לא אומתו)`, 'up', 'קבלות על התרומות (סעיף 46)', 'rule'));
     else if (don >= mm[0]) donationsCredit = Math.round(dc.rate * Math.min(don, dc.incomeShare * taxable, mm[1]));
   }
+  // מס יסף: גם הכנסה משוק ההון נספרת לסף. בהכנסה כזו מפנים לרו"ח (המדרגה האחרונה כאן מכסה רק את ההכנסה מעבודה).
+  if (cap && totalIncome + cap.income > yp.brackets.value[5][0]) stops.push('ההכנסה הכוללת שלך, כולל שוק ההון, מעל סף מס היסף. מומלץ רואה חשבון לשנה הזו.');
   const credits = pointsCredit + pensionCredit + settlementCredit + donationsCredit;
-  const taxDue = Math.max(0, grossTax - credits);
-  const withheld = sum(p.employers, 'taxWithheld') + sum(p.btl, 'taxWithheld'); // 042
+  const capTax = cap ? cap.tax : 0;
+  if (cap && capTax > 0 && credits > grossTax) out.push(excluded(`${RULES.pointsVsCapitalTax.label} (הכלל עוד לא אומת)`, 'up', null, 'rule'));
+  const taxDue = Math.max(0, grossTax - credits) + capTax;
+  const capWithheld = cap ? cap.withheld : 0;                     // 040 (מטופסי 867)
+  const withheld = sum(p.employers, 'taxWithheld') + sum(p.btl, 'taxWithheld') + capWithheld; // 042 + 040
   const balance = withheld - taxDue;
 
   return {
     blocks, stops, excluded: out,
-    lines: { salary, btlIncome, totalIncome, deductions, taxable, grossTax, points, kidPoints, pointsCredit, pensionCredit, settlementCredit, donationsCredit, credits, taxDue, withheld, balance },
+    lines: { salary, btlIncome, rentTaxable, rentTax: Math.round(rentTax), totalIncome, deductions, taxable, grossTax, points, kidPoints, pointsCredit, pensionCredit, settlementCredit, donationsCredit, credits,
+      capitalIncome: cap ? cap.income : 0, capitalTax: capTax, capitalWithheld: capWithheld, capitalLossLeft: cap ? cap.lossLeft : 0, taxDue, withheld, balance },
   };
 }
 
