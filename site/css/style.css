@@ -141,3 +141,8 @@ table.files td.actions { white-space: nowrap; text-align: left; }
 .red-star { color: var(--bad); font-weight: 800; }
 sup.red-star { font-size: 0.6em; margin-inline-start: 2px; }
 label.tag { display: inline-block; margin: 2px 0 2px 10px; cursor: pointer; }
+.notice.important { background: var(--warn-soft); border: 2px solid var(--warn); font-size: 1.05rem; }
+.notice.tip { background: var(--brand-soft); border: 1.5px solid var(--brand); font-size: 1rem; }
+.docrow .box { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 2px solid #9aa3ab; border-radius: 5px; background: #eef0f2; color: transparent; font-weight: 800; }
+.docrow.done .box { border-color: var(--good); background: var(--good-soft); color: var(--good); }
+.docrow.done .docname { text-decoration: line-through; color: var(--muted); font-weight: 400; }
