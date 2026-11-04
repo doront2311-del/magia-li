@@ -55,6 +55,7 @@ export function suggestName(d, year, who) {
     btlUnemployment: 'ביטוח-לאומי-אישור-תשלומי-אבטלה',
     residency: 'אישור-תושבות-1312א',
     bankProof: 'אישור-ניהול-חשבון',
+    form867: `867-חשבון-${d.account || 'מסחר'}`,
   }[d.type];
   return n ? `${y}-${p}${n}.pdf` : null;
 }

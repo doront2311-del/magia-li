@@ -1,7 +1,7 @@
 // האשף: סינון → שאלות עליך → לכל שנה (שאלות + מסמכים) → תוצאה → מדריך הגשה → אחרי ההגשה.
 // עיקרון אפס הנחות: אין ברירות מחדל. כל שאלה מוצגת היא שאלת חובה, ו"המשך" לא עובד עד שעונים על הכול.
 
-import { computeYear, amountBucket } from './engine.js';
+import { computeYear, amountBucket, rentTaxablePart } from './engine.js';
 import { buildGuide } from './guide.js';
 import { openYears, deadline, BOOKLET, RENT_CEILING } from './params.js';
 import { track, device } from './analytics.js';
@@ -79,8 +79,11 @@ function renderScreen(ctx) {
     ${q.yn('screen.resident', 'היית תושב/ת ישראל בכל השנים האלה?')}
     ${q.yn('screen.oleh', 'עלית לארץ או חזרת אחרי תקופה ארוכה בחו"ל (תושב חוזר) בעשר השנים האחרונות?')}`;
   if (sel.length) {
-    html += q.yn('screen.otherIncome', 'היו לך (או לבן/בת הזוג) באחת השנים שבחרת הכנסות ממכירת מניות או קריפטו, דיבידנד, הכנסות מחו"ל, או שכר דירה על נכס שהוא לא דירת מגורים (למשל חנות או משרד)?',
-      'על שכר דירה מדירת מגורים בישראל יש שאלה נפרדת מיד אחרי זו.');
+    html += q.yn('screen.securities', 'היה לך (או לבן/בת הזוג) באחת השנים שבחרת חשבון מסחר בניירות ערך בבנק או בבית השקעות בישראל, שמכרת בו מניות, קרנות או אג"ח, או שקיבלת בו דיבידנד או ריבית?',
+      'גם אם הפסדת, וגם אם המס כבר נוכה במקור. על כל חשבון כזה הבנק או בית ההשקעות מוציא בכל שנה "טופס 867", ואותו נבקש להעלות. חשבון שרק קנית בו ולא מכרת, ולא קיבלת בו דיבידנד או ריבית, לא נחשב.');
+    if (get('screen.securities') === 'yes') html += `<div class="sub">${years('screen.secYears', 'באילו שנים?', '', sel)}</div>`;
+    html += q.yn('screen.otherIncome', 'היו לך (או לבן/בת הזוג) באחת השנים שבחרת הכנסות מקריפטו, ממניות בחשבון מסחר בחו"ל (ברוקר זר), ממניות או אופציות שקיבלת מהמעסיק (RSU או סעיף 102), הכנסות אחרות מחו"ל, או שכר דירה על נכס שהוא לא דירת מגורים (למשל חנות או משרד)?',
+      'על חשבון מסחר בבנק או בבית השקעות בישראל יש שאלה נפרדת למעלה, ועל שכר דירה מדירת מגורים בישראל יש שאלה נפרדת מיד אחרי זו.');
     if (get('screen.otherIncome') === 'yes') html += `<div class="sub">${years('screen.otherYears', 'באילו שנים?', 'את השנים האלה האפליקציה עוד לא יודעת לחשב, ונמליץ עליהן על רואה חשבון. את שאר השנים נבדוק כרגיל.', sel)}</div>`;
     html += q.yn('screen.rent', 'קיבלת (או בן/בת הזוג) שכר דירה על דירת מגורים בישראל באחת השנים שבחרת?', 'גם אם לא שילמת על זה מס. לכל שנה נשאל אחר כך כמה קיבלת ובאיזה מסלול מס, כי זה קובע אם צריך לדווח ומה לצרף.');
     if (get('screen.rent') === 'yes') html += `<div class="sub">${years('screen.rentYears', 'באילו שנים?', '', sel)}</div>`;
@@ -422,14 +425,35 @@ function renderYear(ctx, year) {
   }
   if ((get('screen.rentYears') || []).includes(year) && get('screen.rent') === 'yes') {
     html += q.choice(`${y}.rentTrack`, `באיזה מסלול מס היה שכר הדירה בשנת ${year}?`, [
-      ['exempt', 'פטור: לא שילמתי על זה מס'], ['ten', '10%: שילמתי לרשות המסים 10% משכר הדירה'], ['regular', 'רגיל: דיווחתי ושילמתי מס לפי המדרגות'], ['unsure', 'לא בטוח/ה']],
-      'רוב מי שמשכיר דירה אחת ולא שילם על זה כלום נמצא במסלול הפטור. המסלול נקבע לכל שנה בנפרד.');
+      ['exempt', 'לא שילמתי על זה מס'], ['ten', '10%: שילמתי לרשות המסים 10% משכר הדירה'], ['regular', 'רגיל: דיווחתי ושילמתי מס לפי המדרגות'], ['unsure', 'לא בטוח/ה']],
+      'מי שמשכיר דירה ולא שילם ולא דיווח על זה כלום נמצא במסלול הפטור. המסלול נקבע לכל שנה בנפרד.');
     if (get(`${y}.rentTrack`) === 'exempt') {
       const c = RENT_CEILING[year];
-      html += `<div class="sub">${q.num(`${y}.rentMax`, `מה הסכום הכי גבוה שקיבלת בחודש אחד בשנת ${year}, מכל הדירות ביחד?`, c ? `הפטור המלא הוא לכל חודש שבו שכר הדירה לא עבר ${fmt(c.value)} ₪ (התקרה של ${year}).` : '')}</div>`;
+      html += `<div class="sub">${q.choice(`${y}.rentUnderCeiling`, c ? `בכל חודש בשנת ${year}, שכר הדירה מכל הדירות ביחד היה עד ${fmt(c.value)} ₪?` : `בכל חודש בשנת ${year}, שכר הדירה היה מתחת לתקרת הפטור?`, [['yes', 'כן, בכל החודשים'], ['no', 'לא, לפחות בחודש אחד היה יותר'], ['unsure', 'לא בטוח/ה']], 'לא צריך סכום מדויק. זו התקרה של הפטור המלא: מתחתיה אין מס בכלל, ואין מה לשלם גם אחרי שמצהירים. סופרים יחד את שכר הדירה של כל הדירות שלך ושל בן/בת הזוג.')}`;
+      if (c && get(`${y}.rentUnderCeiling`) === 'no') {
+        html += '<div class="sub">';
+        if (couple) html += q.choice(`${y}.rentWho`, 'על שם מי ההכנסה משכר הדירה?', [['self', 'רק שלי'], ['spouse', 'רק של בן/בת הזוג'], ['both', 'של שנינו ביחד']], 'לפי מי שהדירה רשומה על שמו.');
+        html += q.yn(`${y}.rentSame`, `שכר הדירה (מכל הדירות ביחד) היה אותו סכום בכל החודשים שבהם קיבלת אותו ב-${year}?`);
+        if (get(`${y}.rentSame`) === 'yes') {
+          html += `<div class="grid2">${q.num(`${y}.rentMonthly`, 'כמה ₪ בחודש?', 'הסכום של כל הדירות ביחד, לפני הוצאות.')}
+            ${q.num(`${y}.rentMonths`, `בכמה חודשים ב-${year} קיבלת אותו?`, '', { min: 1, max: 12 })}</div>`;
+        } else if (get(`${y}.rentSame`) === 'no') {
+          html += `<div class="label">כמה ₪ קיבלת בכל חודש ב-${year}? (בחודש בלי שכר דירה כותבים 0)</div><div class="grid2">`;
+          for (let mo = 1; mo <= 12; mo++) html += q.num(`${y}.rentM.${mo}`, `חודש ${mo}`);
+          html += '</div>';
+        }
+        const who = couple ? get(`${y}.rentWho`) : 'self';
+        if (who === 'self' || who === 'spouse') html += q.yn(`${y}.rentAge60`, `${who === 'spouse' ? 'לבן/בת הזוג' : 'לך'} כבר מלאו 60 בשנת ${year}?`, 'מתחת לגיל 60 המס על החלק החייב הוא לפחות 31%. מגיל 60 הוא לפי המדרגות הרגילות.');
+        html += '</div>';
+      }
+      html += '</div>';
     }
     const r = rentState(year);
-    if (r?.ok) html += `<div class="notice info small"><b>שכר הדירה פטור ממס, ולא משנה את החישוב.</b> אבל מי שמגיש בקשה להחזר צריך להצהיר בה על ההכנסה הזו ועל הבחירה במסלול הפטור, ולצרף את חוזה השכירות (שכתוב בו שהדירה למגורים בלבד), או הצהרה בכתב מהשוכרים שהדירה משמשת למגורים בלבד. נוסיף את זה לרשימת המסמכים ולמדריך.</div>`;
+    if (r?.ok && !r.taxable) html += `<div class="notice info small"><b>שכר הדירה פטור ממס, ולא משנה את החישוב.</b> אבל מי שמגיש בקשה להחזר צריך להצהיר בה על ההכנסה הזו ועל הבחירה במסלול הפטור, ולצרף את חוזה השכירות (שכתוב בו שהדירה למגורים בלבד), או הצהרה בכתב מהשוכרים שהדירה משמשת למגורים בלבד. נוסיף את זה לרשימת המסמכים ולמדריך.</div>`;
+    if (r?.ok && r.taxable) html += `<div class="notice bad"><b><span class="red-star">*</span> שכר הדירה עבר את התקרה, ולכן ${fmt(r.taxable)} ₪ ממנו חייבים במס ב-${year}.</b>
+      <p>בחודש שבו שכר הדירה בין התקרה (${fmt(r.ceiling.value)} ₪) לפעמיים התקרה, החלק החייב הוא פעמיים ההפרש מעל התקרה. בחודש שבו הוא פעמיים התקרה או יותר, כולו חייב. החלק החייב נכנס לדו"ח בשדה 059, והמס עליו ${r.age60 ? 'לפי המדרגות הרגילות' : 'לפחות 31%'} נכנס לחישוב, ולכן הוא מקטין את ההחזר.</p>
+      <p><b>מה מצרפים:</b> את חוזה השכירות (שכתוב בו שהדירה למגורים בלבד), ורשימה של שכר הדירה שקיבלת בכל חודש (מהצ'קים או מדפי הבנק). נוסיף אותם לרשימת המסמכים ולמדריך.</p>
+      <p><b>למה לא כדאי להשמיט את שכר הדירה מהבקשה:</b> בבקשה להחזר חותמים שכל ההכנסות דווחו. בקשה בלי שכר הדירה היא הצהרה לא נכונה. רשות המסים יכולה לגלות את ההכנסה (למשל מהשוכרים, מרישום הנכס או מהבנק), ואז היא פותחת את השנה, דורשת את המס עם הצמדה, ריבית וקנס, ויכולה לבטל את ההחזר. הצהרה לא נכונה בדו"ח היא גם עבירה לפי פקודת מס הכנסה.</p></div>`;
   }
   html += q.yn(`${y}.lifeIns`, `שילמת בעצמך בשנת ${year} על ביטוח חיים, כולל ביטוח חיים של משכנתא?`, 'הכוונה לביטוח שאתה משלם, למשל בהוראת קבע לחברת הביטוח או דרך הבנק של המשכנתא. ביטוח שהמעסיק מפריש לך דרך התלוש לא נחשב כאן. אם כן, תצטרך להוריד "אישור שנתי למס הכנסה" מהאזור האישי באתר של חברת הביטוח שלך.');
   if (get(`${y}.lifeIns`) === 'yes') html += `<div class="sub">${q.num(`${y}.lifeInsAmount`, 'סכום הפרמיות בשנה לפי האישור', 'מעתיקים מהאישור השנתי. את האישור מעלים בשלב המסמכים, כי מצרפים אותו לבקשה.')}</div>`;
@@ -448,6 +472,7 @@ function renderYear(ctx, year) {
   }
   html += renderPersonDocs(q, `${y}.self`, 'self', year);
   if (couple && get(`${y}.spouseIncome`) === 'yes') html += renderPersonDocs(q, `${y}.spouse`, 'spouse', year);
+  if (secYear(year)) html += renderSecurities(q, year);
   html += '</div>';
   return html;
 }
@@ -462,12 +487,33 @@ function rentState(year) {
   const CPA = 'מומלץ רואה חשבון.';
   if (t === 'ten') return { out: `במסלול 10% צריך לדווח על שכר הדירה ועל המס ששולם בדו"ח, וזה עוד לא נתמך באפליקציה. ${CPA}` };
   if (t === 'regular') return { out: `במסלול הרגיל שכר הדירה מתווסף להכנסה ומשנה את המס, וזה עוד לא נתמך באפליקציה. ${CPA}` };
-  if (t === 'unsure') return { out: `בלי לדעת את מסלול המס של שכר הדירה אי אפשר לדעת אם הוא משנה את ההחזר. אם לא שילמת על שכר הדירה אף פעם מס ולא דיווחת עליו, כנראה שזה מסלול הפטור, ואז בוחרים "פטור". אם עדיין לא בטוח: ${CPA}` };
+  if (t === 'unsure') return { out: `בלי לדעת את מסלול המס של שכר הדירה אי אפשר לדעת אם הוא משנה את ההחזר. אם לא שילמת על שכר הדירה אף פעם מס ולא דיווחת עליו, כנראה שזה מסלול הפטור, ואז בוחרים "לא שילמתי על זה מס". אם עדיין לא בטוח: ${CPA}` };
   const c = RENT_CEILING[year];
   if (!c) return { out: `עוד אין לנו תקרת פטור מאומתת לשכר דירה ב-${year}, ולכן השנה הזו לא תחושב. אנחנו עובדים על זה.` };
-  const max = get(`${y}.rentMax`);
-  if (!answered(max)) return null;
-  if (Number(max) > c.value) return { out: `בחודש שבו שכר הדירה עבר ${fmt(c.value)} ₪ יש רק פטור חלקי, וחלק משכר הדירה חייב במס. זה עוד לא נתמך באפליקציה. ${CPA}` };
+  const under = get(`${y}.rentUnderCeiling`);
+  if (!answered(under)) return null;
+  if (under === 'unsure') return { out: `בלי לדעת אם שכר הדירה עבר בחודש כלשהו את ${fmt(c.value)} ₪ אי אפשר לדעת אם יש עליו מס. בודקים בחוזה או בצ'קים ועונים כן או לא. אם עדיין לא בטוח: ${CPA}` };
+  if (under === 'no') {
+    // פטור חלקי: לפי הסכום בכל חודש. החלק החייב נכנס לחישוב (059) ומקבל כוכבית אדומה בתוצאה.
+    const couple = get(`${y}.marital`) === 'married';
+    const who = couple ? get(`${y}.rentWho`) : 'self';
+    if (!answered(who)) return null;
+    if (who === 'both') return { out: `כששכר הדירה מעל התקרה והדירה של שניכם ביחד, צריך לחלק את ההכנסה ביניכם, ואת הכלל לחלוקה עוד לא אימתנו. ${CPA}` };
+    if (who === 'spouse' && get(`${y}.spouseIncome`) !== 'yes') return { out: `שכר דירה חייב במס על שם בן/בת זוג שלא היו לו/לה הכנסות אחרות עוד לא נתמך באפליקציה. ${CPA}` };
+    const same = get(`${y}.rentSame`);
+    let monthly;
+    if (same === 'yes') {
+      const v = get(`${y}.rentMonthly`), n = get(`${y}.rentMonths`);
+      if (!answered(v) || !answered(n)) return null;
+      monthly = Array(Math.min(12, Math.max(0, Number(n)))).fill(Number(v));
+    } else if (same === 'no') {
+      monthly = [];
+      for (let mo = 1; mo <= 12; mo++) { const v = get(`${y}.rentM.${mo}`); if (!answered(v)) return null; monthly.push(Number(v)); }
+    } else return null;
+    const age = get(`${y}.rentAge60`);
+    if (!answered(age)) return null;
+    return { ok: true, ceiling: c, monthly, who, age60: age === 'yes', taxable: rentTaxablePart(monthly, c.value) };
+  }
   return { ok: true, ceiling: c };
 }
 // צרופות שנובעות מתשובות בשאלון: אין להן מבנה אחד (כל חברת ביטוח, מוסד ועמותה מוציאים אחרת), ולכן
@@ -480,7 +526,9 @@ function attachNeeds(base, year) {
   if (y('disability') === 'yes') out.push({ key: 'disability', tag: 'האישור על אובדן כושר עבודה', doc: 'אישור שנתי למס הכנסה מחברת הביטוח על ביטוח אובדן כושר העבודה', why: 'כי ענית ששילמת ביטוח אובדן כושר עבודה פרטי' });
   if (y('donations') === 'yes') out.push({ key: 'donations', tag: 'קבלות על תרומות', doc: 'הקבלות על התרומות (סעיף 46)', why: 'כי ענית שתרמת' });
   if (y('institution') === 'yes') out.push({ key: 'institution', tag: 'קבלות מהמוסד', doc: 'הקבלות מהמוסד על התשלומים בשנה', why: 'כי ענית ששילמת על קרוב משפחה במוסד' });
-  if (rentState(year)?.ok) out.push({ key: 'rent', tag: 'חוזה השכירות', doc: RENT_DOC, why: 'כי קיבלת שכר דירה במסלול הפטור' });
+  const rent = rentState(year);
+  if (rent?.ok) out.push({ key: 'rent', tag: 'חוזה השכירות', doc: RENT_DOC, why: 'כי קיבלת שכר דירה במסלול הפטור' });
+  if (rent?.ok && rent.taxable) out.push({ key: 'rentList', tag: 'רשימת שכר הדירה לפי חודשים', doc: RENT_LIST_DOC, why: 'כי שכר הדירה עבר את תקרת הפטור' });
   return out;
 }
 function attachMissing(base, year) {
@@ -488,11 +536,97 @@ function attachMissing(base, year) {
   return attachNeeds(base, year).filter((a) => !docs.some((d) => d.type === 'attach' && d.attachKey === a.key));
 }
 const RENT_DOC = 'חוזה השכירות (שכתוב בו שהדירה משמשת למגורים בלבד), או הצהרה בכתב מהשוכרים שהדירה משמשת למגורים בלבד';
+const RENT_LIST_DOC = 'רשימה של שכר הדירה שקיבלת בכל חודש בשנה (מהצ\'קים או מדפי הבנק)';
+
+// ---------- חשבון מסחר בישראל (טופס 867) ----------
+// הקבצים של כל החשבונות בשנה נשמרים במקום אחד (years.Y.sec), גם של בן/בת הזוג, כדי שחשבון משותף לא ייספר פעמיים.
+const secYear = (year) => get('screen.securities') === 'yes' && (get('screen.secYears') || []).includes(year);
+const HOWTO_867 = `<details class="howto" open><summary>איפה מוצאים את טופס 867</summary><ol>
+  <li>נכנסים לאתר או לאפליקציה של הבנק או של בית ההשקעות (למשל IBI, מיטב, אקסלנס, או הבנק שבו יש תיק ניירות ערך).</li>
+  <li>מחפשים "מסמכים", "דוחות שנתיים" או "אישורים למס", ושם את <b>"אישור ניכוי מס במקור"</b> או <b>"טופס 867"</b> לשנה הנכונה. בחלק מהמקומות הוא נקרא "דוח שנתי למס הכנסה".</li>
+  <li>יש טופס נפרד לכל חשבון. הוא יוצא בדרך כלל בפברואר או במרץ של השנה שאחרי, ולשנים קודמות אפשר להוריד אותו מאותו מקום, או לבקש מהבנק.</li>
+  <li>בטופס יש שני חלקים: "רווח הון מניירות ערך" (867 א+ב) ו"דיבידנד וריבית מניירות ערך" (867 ג). לפעמים הם באותו קובץ ולפעמים בשני קבצים. מעלים את שניהם.</li>
+  <li>הדוח החודשי או הרבעוני שנשלח במייל הוא לא הטופס. צריך את האישור השנתי למס.</li></ol></details>`;
+function secState(year) {
+  const base = `years.${year}.sec`;
+  const docs = get(`${base}.docs`) || [];
+  const s = summarizeDocs(docs.filter((d) => d.type === 'form867'), year);
+  const issues = [...s.issues];
+  const others = docs.filter((d) => d.type !== 'form867');
+  if (others.length) issues.push(`${others.map((d) => `"${d.fileName}"`).join(', ')}: זה לא נראה כמו טופס 867, ולכן לא נכלל. מסמכים אחרים מעלים במקום שלהם למעלה.`);
+  const count = Number(get(`${base}.count`)) || 0;
+  const need = [];
+  if (s.accounts.length < count) need.push(`טופס 867 לשנת ${year}: הועלו ${s.accounts.length} מתוך ${count} חשבונות`);
+  for (const a of s.accounts) {
+    if (!a.ok) need.push(`לא הצלחנו לקרוא את הסכומים בטופס 867 של חשבון ${a.key}. נסו להוריד אותו שוב כ-PDF מהאתר (לא סריקה ולא צילום מסך)`);
+    if (!a.partGains) need.push(`בחשבון ${a.key} חסר החלק "רווח הון מניירות ערך" (867 א+ב). אם הוא בקובץ נפרד, מעלים גם אותו`);
+    if (!a.partDiv) need.push(`בחשבון ${a.key} חסר החלק "דיבידנד וריבית מניירות ערך" (867 ג). אם הוא בקובץ נפרד, מעלים גם אותו`);
+  }
+  const shares = s.accounts.filter((a) => a.partners.length > 1).map((a) => ({ a, path: `${base}.share.${a.key}` }));
+  const shareOf = (a) => { const sh = shares.find((x) => x.a === a); return sh ? Number(get(sh.path)) / 100 : 1; };
+  return { base, docs, accounts: s.accounts, issues, need, shares, shareOf, count, complete: need.length === 0 };
+}
+// כל החשבונות ביחד, לפי החלק של המגישים בכל חשבון. השיעורים נשארים כמו בטופס.
+function capitalFrom(year, ignoreShares = false) {
+  const st = secState(year);
+  if (!st.accounts.length) return null;
+  const cap = { gains: {}, dividends: {}, interest: {}, losses: 0, withheld: 0, foreignTax: 0, oilGains: 0, turnover: 0, gainsTax: 0, dividendTax: 0, interestTax: 0, nonOffsetLosses: 0, accounts: [] };
+  const add = (to, from, k) => { for (const [r, v] of Object.entries(from || {})) to[r] = (to[r] || 0) + v * k; };
+  for (const a of st.accounts) {
+    const k = ignoreShares ? 1 : st.shareOf(a);
+    if (!(k > 0)) continue;
+    add(cap.gains, a.gains, k); add(cap.dividends, a.dividends, k); add(cap.interest, a.interest, k);
+    cap.losses += a.losses * k; cap.foreignTax += a.foreignTax * k; cap.oilGains += a.oilGains * k; cap.turnover += a.turnover * k; cap.nonOffsetLosses += a.nonOffsetLosses * k;
+    cap.gainsTax += a.gainsTax * k; cap.dividendTax += a.dividendTax * k; cap.interestTax += a.interestTax * k;
+    cap.withheld += (a.gainsTax + a.dividendTax + a.interestTax - a.lossRefund) * k;
+    cap.accounts.push({ key: a.key, share: k, sources: a.sources });
+  }
+  for (const o of [cap.gains, cap.dividends, cap.interest]) for (const r of Object.keys(o)) o[r] = Math.round(o[r]);
+  for (const f of ['losses', 'foreignTax', 'oilGains', 'turnover', 'withheld', 'gainsTax', 'dividendTax', 'interestTax', 'nonOffsetLosses']) cap[f] = Math.round(cap[f]);
+  return cap;
+}
+function renderSecurities(q, year) {
+  const st = secState(year);
+  const { base, docs } = st;
+  let html = `<h3>חשבונות מסחר בניירות ערך ב-${year} (טופס 867)</h3>
+    ${q.num(`${base}.count`, `בכמה חשבונות מסחר בישראל (שלך ושל בן/בת הזוג) מכרת ב-${year}, או קיבלת דיבידנד או ריבית?`, 'כל חשבון בבנק או בבית השקעות נספר בנפרד. חשבון משותף נספר פעם אחת.', { min: 1, max: 10 })}
+    <p>על כל חשבון מעלים את טופס 867 של ${year}. האפליקציה קוראת ממנו את הרווח, ההפסד, הדיבידנד, הריבית והמס שכבר נוכה, ומכניסה אותם לחישוב ולמדריך.</p>
+    ${HOWTO_867}
+    <label class="drop"><input type="file" accept="application/pdf,.pdf" multiple data-upload="${base}" data-upyear="${year}">
+      <b>בחירת קבצי טופס 867</b><span class="small muted">אפשר לבחור כמה קבצים ביחד</span></label>`;
+  if (state.ui.reading === base) html += '<div class="notice info">קורא את הקבצים…</div>';
+  if (docs.length) html += `<table class="files">${docs.map((d, i) => {
+    const ok = d.type === 'form867' && (!d.year || d.year === year);
+    const what = ok ? `טופס 867, ${d.year || year}${d.account ? `, חשבון ${d.account}` : ''}${d.partGains && d.partDiv ? '' : d.partGains ? ' (רווח הון)' : d.partDiv ? ' (דיבידנד וריבית)' : ''}` : d.type === 'error' ? 'לא הצלחנו לפתוח את הקובץ' : (DOC_TYPES[d.type] || 'לא זוהה');
+    return `<tr><td>${ok ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small muted">${esc(what)}</div></td><td class="actions"><button class="btn link" type="button" data-view="${base}|${i}">צפייה</button> <button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`;
+  }).join('')}</table>`;
+  if (st.issues.length) html += `<div class="notice warn">${st.issues.map(esc).join('<br>')}</div>`;
+  for (const { a, path } of st.shares) {
+    html += q.num(path, `חשבון ${esc(a.key)} רשום על שם ${a.partners.length} אנשים. כמה אחוזים ממנו שייכים לך (ולבן/בת הזוג, אם אתם מגישים דו"ח משותף)?`, 'אם כל השותפים בחשבון הם את/ה ובן/בת הזוג ואתם מגישים דו"ח משותף, כותבים 100. אם יש שותף אחר (למשל הורה או אח), כותבים את החלק שלכם לפי ההסכם ביניכם, ובדרך כלל זה חלק שווה.', { min: 1, max: 100 });
+  }
+  if (st.accounts.length) {
+    const pending = st.shares.some((x) => !answered(get(x.path)));
+    const cap = capitalFrom(year, pending);
+    const rates = (o) => Object.entries(o).filter(([, v]) => v).map(([r, v]) => `${fmt(v)} ₪ (${r}%)`).join(', ') || '0';
+    html += `<table class="calc"><tr><td><b>מה מצאנו בטופסי 867</b>${st.shares.length ? `<div class="small muted">${pending ? 'הסכומים של כל החשבון. אחרי שתענה כמה אחוזים שייכים לך, נחשב רק את החלק שלך' : 'לפי החלק שלך בחשבונות המשותפים'}</div>` : ''}</td><td class="num"></td></tr>
+      <tr><td>רווח הון</td><td class="num">${rates(cap.gains)}</td></tr>
+      ${cap.losses ? `<tr><td>הפסד הון שאפשר לקזז</td><td class="num">${fmt(cap.losses)}</td></tr>` : ''}
+      <tr><td>דיבידנד</td><td class="num">${rates(cap.dividends)}</td></tr>
+      <tr><td>ריבית</td><td class="num">${rates(cap.interest)}</td></tr>
+      <tr><td>מס שכבר נוכה במקור</td><td class="num">${fmt(cap.withheld)}</td></tr></table>`;
+  }
+  if (st.need.length) {
+    html += `<div class="notice warn"><b>עוד חסר:</b><ul>${st.need.map((n) => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
+    html += q.choice(`${base}.partialOk`, 'אין לך עכשיו את כל טופסי ה-867?', [['yes', 'להמשיך בלי, ולקבל הערכה חלקית']],
+      'נחשב רק לפי הטפסים שהועלו. בתוצאה תופיע כוכבית: החשבונות שחסרים יכולים לשנות את התוצאה לשני הכיוונים, ולכן לא מחליטים אם להגיש לפני שמשלימים.');
+  }
+  return html;
+}
 
 function yearOut(year) {
   const y = `years.${year}`;
   if (get(`${y}.marital`) === 'separated') return 'נשואים שחיים בנפרד מגישים עם טופס 4440, וזה עוד לא נתמך. מומלץ רואה חשבון.';
-  if (get('screen.otherIncome') === 'yes' && (get('screen.otherYears') || []).includes(year)) return 'ענית שבשנה הזו היו הכנסות ממניות, קריפטו, דיבידנד, מחו"ל או משכירות של נכס שאינו דירת מגורים. את זה האפליקציה עוד לא יודעת לחשב. מומלץ רואה חשבון.';
+  if (get('screen.otherIncome') === 'yes' && (get('screen.otherYears') || []).includes(year)) return 'ענית שבשנה הזו היו הכנסות מקריפטו, מברוקר בחו"ל, ממניות מהמעסיק, מחו"ל או משכירות של נכס שאינו דירת מגורים. את זה האפליקציה עוד לא יודעת לחשב. מומלץ רואה חשבון.';
   const rent = rentState(year);
   if (rent?.out) return rent.out;
   if (get(`${y}.severance`) === 'yes') return 'משיכת פיצויים או כספים מקופות דורשת חישוב של פטורים ופריסה, וזה עוד לא נתמך. מומלץ רואה חשבון.';
@@ -610,10 +744,23 @@ function caseFor(year) {
     Object.assign(sp.settlement, { livedMonths: lived, rate: self.settlement.rate, ceiling: self.settlement.ceiling, missing: self.settlement.missing });
     people.push(sp);
   }
+  const rent = rentState(year);
+  if (rent?.taxable) {
+    const owner = rent.who === 'spouse' ? people.find((p) => p.role === 'spouse') : self;
+    if (owner) owner.rent = { taxable: rent.taxable, age60: rent.age60 };
+  }
+  if (secYear(year)) {
+    // את כל החשבונות שמים אצל המגיש: המס בשוק ההון בשיעור קבוע, ולכן לא משנה אצל מי מבני הזוג הוא נרשם.
+    const cap = capitalFrom(year);
+    if (cap) self.capital = cap;
+    const st = secState(year);
+    if (st.need.length) self.excluded = [...(self.excluded || []), { label: 'רווח, הפסד, דיבידנד, ריבית והמס שנוכה בחשבונות מסחר שעוד לא הועלה להם טופס 867 מלא', effect: 'either', doc: `טופס 867 לשנת ${year} מכל חשבון מסחר (הבנק או בית ההשקעות: "אישור ניכוי מס במקור")`, kind: 'doc' }];
+  }
   // תשובות שהמדריך צריך כדי להגיד מה למלא בכל שדה (המנוע לא צריך אותן).
   const answers = {
     dischargeYear: get('me.dischargeYear'), dischargeMonth: get('me.dischargeMonth'), degreeYear: get('me.degreeYear'),
-    settlementName: st?.name || y('settlementName'), rentExempt: !!rentState(year)?.ok, rentCeiling: rentState(year)?.ceiling?.value, lifeIns: self.credits.lifeInsurance, disability: self.credits.disabilityInsurance, institution: self.credits.institutionRelative,
+    settlementName: st?.name || y('settlementName'), rentExempt: !!rent?.ok && !rent.taxable, rentCeiling: rent?.ceiling?.value, rentTaxable: rent?.taxable || 0, rentWho: rent?.who, rentAge60: rent?.age60, rentMonthly: rent?.monthly,
+    capital: self.capital || null, lifeIns: self.credits.lifeInsurance, disability: self.credits.disabilityInsurance, institution: self.credits.institutionRelative,
   };
   return { maritalStatus: m, people, answers, needsBankProof: get('me.prevRefund') !== 'yes', attachments: attachNeeds(`years.${year}.self`, year).map((a) => ({ doc: a.doc, why: a.why })) };
 }
@@ -648,6 +795,14 @@ function partialNotice(r) {
   if (r.missingDocs?.length) html += `<div class="notice warn"><b>מסמכים שחסרים לנו ל-${r.year}:</b><ul>${r.missingDocs.map((d) => `<li>${esc(d)}</li>`).join('')}</ul>${r.status === 'refund' ? `<button class="btn link" type="button" data-edit="${r.year}">להעלאת המסמכים ל-${r.year}</button>` : ''}</div>`;
   return html;
 }
+// שכר דירה מעל התקרה: כוכבית אדומה, וההסבר על הסיכון בהשמטה. לא חוסם את המעבר למדריך.
+const rentTaxableOf = (r) => (r.results || []).reduce((t, p) => t + (p.lines?.rentTaxable || 0), 0);
+const rentStar = (r) => (rentTaxableOf(r) ? '<sup class="red-star">*</sup>' : '');
+function rentNotice(r) {
+  const t = rentTaxableOf(r);
+  if (!t) return '';
+  return `<div class="notice bad"><b><span class="red-star">*</span> התוצאה כוללת מס על שכר הדירה.</b> שכר הדירה ב-${r.year} עבר את תקרת הפטור, ו-${fmt(t)} ₪ ממנו חייבים במס. בלי שכר הדירה ההחזר היה גבוה יותר, אבל בבקשה להחזר חותמים שכל ההכנסות דווחו: <b>השמטה של שכר הדירה היא הצהרה לא נכונה</b>. אם רשות המסים תגלה אותו, היא תפתח את השנה, תדרוש את המס עם הצמדה, ריבית וקנס, ויכולה לבטל את ההחזר. הצהרה לא נכונה בדו"ח היא גם עבירה לפי פקודת מס הכנסה. במדריך תמצא איפה מדווחים עליו (שדה 059) ומה מצרפים.</div>`;
+}
 function partialRec(r, rec) {
   if (!r.partial || r.status === 'blocked' || r.status === 'cpa') return rec;
   if (r.direction === 'either') return r.status === 'debt' ? `${rec} ההערכה חלקית, אז כדאי לבדוק שוב אחרי שמשלימים את המסמכים.` : 'כדאי להשלים את המסמכים לפני שמחליטים להגיש.';
@@ -672,7 +827,7 @@ function renderResults() {
   const totalIdx = refunds.reduce((s, r) => s + (r.indexation || 0), 0);
   const anyPartial = refunds.some((r) => r.partial);
   let html = `<h1>התוצאה</h1>`;
-  if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ צפוי לחזור אליך ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}, כולל הצמדה וריבית</div><div class="amount">${anyPartial ? 'לפחות ' : 'כ-'}${fmt(total + totalIdx)} ₪${anyPartial ? '<sup>*</sup>' : ''}</div><div>החזר מס ${fmt(total)} ₪ + הצמדה וריבית כ-${fmt(totalIdx)} ₪ (הערכה עד היום. הסכום ממשיך לגדול עד יום התשלום)</div>${anyPartial ? `<div class="small">* הערכה חלקית ל-${refunds.filter((r) => r.partial).map((r) => r.year).join(', ')}: חלק מהנתונים חסרים ולא נכללו. הפירוט וההסבר בכל שנה למטה.</div>` : ''}${unsure.length ? `<div class="small">לא כולל את ${unsure.map((r) => r.year).join(', ')}, כי שם התוצאה עוד יכולה להשתנות לשני הכיוונים.</div>` : ''}</div>`;
+  if (refunds.length) html += `<div class="card result refund"><div class="muted">סה"כ צפוי לחזור אליך ${refunds.length === 1 ? 'בשנה אחת' : `ב-${refunds.length} שנים`}, כולל הצמדה וריבית</div><div class="amount">${anyPartial ? 'לפחות ' : 'כ-'}${fmt(total + totalIdx)} ₪${anyPartial ? '<sup>*</sup>' : ''}${refunds.some(rentTaxableOf) ? '<sup class="red-star">*</sup>' : ''}</div>${refunds.some(rentTaxableOf) ? `<div class="small"><span class="red-star">*</span> כולל מס על שכר דירה מעל התקרה ב-${refunds.filter(rentTaxableOf).map((r) => r.year).join(', ')}. ההסבר בשנה עצמה למטה.</div>` : ''}<div>החזר מס ${fmt(total)} ₪ + הצמדה וריבית כ-${fmt(totalIdx)} ₪ (הערכה עד היום. הסכום ממשיך לגדול עד יום התשלום)</div>${anyPartial ? `<div class="small">* הערכה חלקית ל-${refunds.filter((r) => r.partial).map((r) => r.year).join(', ')}: חלק מהנתונים חסרים ולא נכללו. הפירוט וההסבר בכל שנה למטה.</div>` : ''}${unsure.length ? `<div class="small">לא כולל את ${unsure.map((r) => r.year).join(', ')}, כי שם התוצאה עוד יכולה להשתנות לשני הכיוונים.</div>` : ''}</div>`;
   const forGuide = rs.filter(guideable);
   if (forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>כל מה שצריך כדי להגיש: אילו מסמכים להכין, איך נכנסים לאתר של רשות המסים, ואיזה ערך לכתוב בכל שדה. השנים במסמך: ${forGuide.map((r) => r.year).join(', ')}.${forGuide.some((r) => r.status === 'blocked') ? ' בשנה שלא חושבה, בודקים את התוצאה בכפתור "חישוב" באתר לפני שמשדרים.' : ''}${forGuide.some((r) => ['zero', 'debt', 'cpa'].includes(r.status)) ? ' גם שנה שלא יוצא בה החזר נמצאת במסמך, כדי שתוכל להחליט בעצמך.' : ''} אפשר להוריד אותו כ-PDF או להדפיס.</p><button class="btn" type="button" data-guide="all">פתיחת המסמך המסכם</button></div>`;
   if (!forGuide.length) html += `<div class="card"><h2 style="margin-top:0">המסמך המסכם להגשה</h2><p>המסמך מסביר שלב-אחר-שלב מה לכתוב בכל שדה באתר של רשות המסים. הוא נוצר לכל שנה שכל המסמכים שלה הועלו. ${rs.some((r) => r.status === 'blocked' || r.missingDocs?.length) ? 'עוד חסרים מסמכים (הרשימה מופיעה בכל שנה למטה). אחרי שתעלה אותם בשלב "שנים ומסמכים", המסמך ייווצר.</p><button class="btn secondary" type="button" data-go="years">להשלמת המסמכים</button>' : 'כרגע אין שנה שכדאי להגיש לה.</p>'}</div>`;
@@ -684,18 +839,20 @@ function renderResults() {
     html += `<div class="card result ${r.status}"><h2 style="margin-top:0">${r.year}: ${title}${r.partial && r.status !== 'blocked' ? ' (הערכה חלקית)' : ''}</h2>`;
     if (r.balance != null && r.status !== 'blocked') {
       if (r.indexation) {
-        html += `<div class="amount">${r.partial ? 'לפחות ' : 'כ-'}${fmt(r.balance + r.indexation)} ₪${star(r)}</div>`;
+        html += `<div class="amount">${r.partial ? 'לפחות ' : 'כ-'}${fmt(r.balance + r.indexation)} ₪${star(r)}${rentStar(r)}</div>`;
         html += `<div>החזר מס ${fmt(r.balance)} ₪ + הצמדה וריבית כ-${fmt(r.indexation)} ₪ (הערכה עד היום. הסכום ממשיך לגדול עד יום התשלום)</div>`;
-      } else html += `<div class="amount">${r.balance < 0 ? '−' : ''}${fmt(Math.abs(r.balance))} ₪${star(r)}</div>`;
+      } else html += `<div class="amount">${r.balance < 0 ? '−' : ''}${fmt(Math.abs(r.balance))} ₪${star(r)}${rentStar(r)}</div>`;
       const L = (k) => r.results.reduce((s, p) => s + p.lines[k], 0);
       html += `<table class="calc">
-        <tr><td>סה"כ הכנסות<div class="muted small">משכורת ותשלומי ביטוח לאומי</div></td><td class="num">${fmt(L('totalIncome'))}</td></tr>
-        <tr><td>מס ברוטו<div class="muted small">לפי מדרגות המס של ${r.year}</div></td><td class="num">${fmt(L('grossTax'))}</td></tr>
+        <tr><td>סה"כ הכנסות<div class="muted small">משכורת ותשלומי ביטוח לאומי${L('rentTaxable') ? ', ושכר הדירה החייב במס' : ''}</div></td><td class="num">${fmt(L('totalIncome'))}</td></tr>
+        ${L('rentTaxable') ? `<tr><td><span class="red-star">*</span> מתוכן: שכר דירה מעל התקרה (שדה 059)<div class="muted small">החלק של שכר הדירה שחייב במס. המס עליו ${fmt(L('rentTax'))} ₪, ${caseFor(r.year).answers.rentAge60 ? 'לפי המדרגות, כי מלאו 60' : 'בשיעור של לפחות 31%, כי זו הכנסה שלא מעבודה'}</div></td><td class="num">${fmt(L('rentTaxable'))}</td></tr>` : ''}
+        <tr><td>מס ברוטו<div class="muted small">לפי מדרגות המס של ${r.year}${L('rentTax') ? ', כולל המס על שכר הדירה' : ''}</div></td><td class="num">${fmt(L('grossTax'))}</td></tr>
         <tr><td>נקודות זיכוי<div class="muted small">${r.results.map((p) => p.lines.points).join(' + ')} נקודות × ערך נקודה בשנת ${r.year}. זיכוי מוריד מהמס, לא מההכנסה</div></td><td class="num">−${fmt(L('pointsCredit'))}</td></tr>
         ${L('pensionCredit') ? `<tr><td>זיכוי על הפקדות לפנסיה<div class="muted small">35% מההפקדות שלך (שדות 045/086 בטופס 106), עד 7% מההכנסה המזכה. ההכנסה המזכה מוגבלת לתקרה של השנה</div></td><td class="num">−${fmt(L('pensionCredit'))}</td></tr>` : ''}
         ${L('settlementCredit') ? `<tr><td>הטבת יישוב מזכה<div class="muted small">אחוז ההנחה של היישוב × ההכנסה, עד התקרה, לפי מספר החודשים שגרת שם</div></td><td class="num">−${fmt(L('settlementCredit'))}</td></tr>` : ''}
+        ${L('capitalIncome') || L('capitalTax') ? `<tr><td>מס על שוק ההון<div class="muted small">רווח הון, דיבידנד וריבית מטופסי 867 (${fmt(L('capitalIncome'))} ₪ אחרי קיזוז הפסדים), לפי השיעור שכתוב בטופס</div></td><td class="num">${fmt(L('capitalTax'))}</td></tr>` : ''}
         <tr><td>מס שהיה צריך לשלם</td><td class="num">${fmt(L('taxDue'))}</td></tr>
-        <tr><td>מס שנוכה בפועל<div class="muted small">מכל טופסי ה-106 ואישורי ביטוח לאומי</div></td><td class="num">${fmt(L('withheld'))}</td></tr>
+        <tr><td>מס שנוכה בפועל<div class="muted small">מכל טופסי ה-106 ואישורי ביטוח לאומי${L('capitalWithheld') ? `, ועוד ${fmt(L('capitalWithheld'))} ₪ מטופסי 867` : ''}</div></td><td class="num">${fmt(L('withheld'))}</td></tr>
       </table>`;
       if (r.reasons?.length) html += `<p><b>למה?</b> ${r.reasons.join(' ')}</p>`;
       if (L('settlementCredit')) {
@@ -706,6 +863,7 @@ function renderResults() {
       }
     }
     if (rec) html += `<p>${rec}</p>`;
+    html += rentNotice(r);
     html += partialNotice(r);
     if (r.stops?.length) html += `<div class="notice warn">${r.stops.join('<br>')}</div>`;
     if (r.status === 'blocked') html += `<div class="notice warn">${r.blocks.map(esc).join('<br>')}</div><p class="small muted">כשחסר מסמך, אפשר להשלים אותו ולחזור. כשהכלל עוד לא אומת אצלנו, נעדכן את האפליקציה בקרוב. לא נחשב שום דבר שלא בדקנו מול מקור רשמי.</p>`;
@@ -802,7 +960,7 @@ function renderGuide() {
   for (const y of years) {
     const ry = resultFor(y);
     const gNote = ry.partial && ry.status !== 'blocked' ? `<div class="notice warn"><b>* לא נכלל בחישוב ובמדריך:</b><ul>${ry.excluded.map((e) => `<li>${esc(e.label)}${e.doc ? `. צריך: ${esc(e.doc)}` : ''}</li>`).join('')}</ul>את הסעיפים האלה האפליקציה עוד לא מכסה. אם תמלא אותם באתר לפי המסמך, ההחזר שיופיע ב"חישוב" באתר יהיה גבוה יותר מכאן, וזה בסדר.</div>` : '';
-    html += `<section class="guide-year"><h2>שנת ${y}: ${ry.status === 'refund' ? `${fmt(ry.balance)} ₪${star(ry)}` : ry.status === 'blocked' ? 'התוצאה לא חושבה, בודקים ב"חישוב" באתר' : ry.balance < 0 ? `חוב ${fmt(-ry.balance)} ₪, לא מומלץ להגיש` : `${fmt(ry.balance)} ₪`}</h2>${gNote}${guideTabs(y).html}</section>`;
+    html += `<section class="guide-year"><h2>שנת ${y}: ${ry.status === 'refund' ? `${fmt(ry.balance)} ₪${star(ry)}${rentStar(ry)}` : ry.status === 'blocked' ? 'התוצאה לא חושבה, בודקים ב"חישוב" באתר' : ry.balance < 0 ? `חוב ${fmt(-ry.balance)} ₪, לא מומלץ להגיש` : `${fmt(ry.balance)} ₪`}</h2>${gNote}${rentNotice(ry)}${guideTabs(y).html}</section>`;
   }
   html += `<section class="guide-year"><h2>אחרי ההגשה</h2>${afterBody()}</section>`;
   html += '<div class="row noprint"><button class="btn" type="button" data-go="after">הגשתי, מה עכשיו?</button> <button class="btn link" type="button" data-go="results">חזרה לתוצאות</button></div>';

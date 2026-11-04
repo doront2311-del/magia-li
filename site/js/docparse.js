@@ -18,6 +18,7 @@ export const DOC_TYPES = {
   legacy106: 'מסמך בקידוד ישן שאי אפשר לקרוא',
   scanned: 'מסמך סרוק (תמונה)',
   residency: 'אישור תושבות (טופס 1312א, מהמועצה או העירייה)',
+  form867: 'טופס 867: אישור ניכוי מס במקור משוק ההון (בנק או בית השקעות)',
   unknown: 'מסמך שלא זיהינו',
 };
 
@@ -138,6 +139,7 @@ export function parseDocument(rawLines) {
   }
   if (!all.trim()) return { type: 'scanned' };
 
+  if (/אישורניכוימסבמקור/.test(all) && /רווחהוןמניירותערך|דיבידנדוריביתמניירותערך/.test(all)) return { type: 'form867', ...parse867(rawLines, L) };
   if (/ריכוזנתונישכרמכללהמעסיקיםבשנתהמס/.test(all)) {
     return { type: 'payrollSummary', year: yearAfter(all, 'בשנתהמס'), employers: readEmployers(L), fields: readFields(L), idTail: idTail(L) };
   }
@@ -181,6 +183,87 @@ export function parseDocument(rawLines) {
   // אישור שהמועצה מילאה: לפעמים רק הנתונים הם טקסט, והטופס עצמו תמונת רקע. מזהים לפי שם הרשות ותאריך.
   if (/מועצהאזורית|מועצהמקומית|עיריית|עירייה|ועדמקומי/.test(all) && /\d{2}\/\d{2}\/\d{4}/.test(all)) return { type: 'residency' };
   return { type: 'unknown' };
+}
+
+// טופס 867 (רשות המסים קבעה את המבנה, ולכן הוא זהה בכל בנק ובית השקעות): רווח הון (867 א+ב) ודיבידנד וריבית (867 ג).
+// הסכומים מופיעים בעמודות לפי שיעור המס, ולכן משייכים כל סכום לכותרת העמודה הקרובה אליו (צריך מיקומים).
+// לא שומרים שמות ומספרי זהות: רק את 4 הספרות האחרונות של כל שותף בחשבון, כדי לדעת אם החשבון משותף.
+const RATE = /^(\d{1,2})%$/;
+export function parse867(rawLines, L = prep(rawLines)) {
+  const all = L.map((l) => l.c).join('\n');
+  const out = { year: yearAfter(all, 'לשנתהמס'), account: null, partners: [], gains: {}, losses: 0, nonOffsetLosses: 0, exemptGains: 0, oilGains: 0,
+    turnover: null, gainsTax: null, dividends: {}, interest: {}, dividendTax: null, interestTax: null, foreignTax: 0, lossRefund: 0, hasGains: false, hasDividends: false, ok: true,
+    partGains: /רווחהוןמניירותערך/.test(all), partDiv: /דיבידנדוריביתמניירותערך/.test(all) };
+  if (rawLines.some((l) => !l.pos)) return { ...out, ok: false };
+  const center = (p) => (p.x + p.r) / 2;
+  const nums = (i, maxX = 360) => rawLines[i].map((s, k) => ({ s, c: center(rawLines[i].pos[k]) })).filter((o) => NUM.test(o.s) && o.c < maxX).map((o) => ({ v: toNum(o.s), c: o.c }));
+  const heads = (i) => rawLines[i].map((s, k) => ({ m: s.match(RATE), c: center(rawLines[i].pos[k]) })).filter((o) => o.m).map((o) => ({ rate: Number(o.m[1]), c: o.c }));
+  const nearest = (cols, c) => cols.reduce((b, h) => (Math.abs(h.c - c) < Math.abs(b.c - c) ? h : b)).rate;
+  const add = (obj, k, v) => { obj[k] = (obj[k] || 0) + v; };
+  // הסכום של שורה: באותה שורה, ואם אין, בשורה הבאה (כשהשורה הבאה היא רק מספרים).
+  const valueAt = (i, maxX) => {
+    const own = nums(i, maxX);
+    if (own.length) return own[0].v;
+    const n = L[i + 1];
+    if (n && !HEB.test(n.items.filter((s) => !NUM.test(s)).join(''))) { const nx = nums(i + 1, maxX); if (nx.length) return nx[0].v; }
+    return null;
+  };
+  let mode = null, cols = null, row = null, block = 0;
+  L.forEach((line, i) => {
+    const c = line.c;
+    if (/מספרחשבון/.test(c) && out.account == null) {
+      for (const j of [i, i + 1]) {
+        const acc = (rawLines[j] || []).find((s) => /^\d{3,12}$/.test(s) && !/^9\d{8}$/.test(s) && !/מספרחשבון/.test(s));
+        if (acc && j > i) { out.account = acc; break; }
+      }
+    }
+    for (const s of line.items) if (/^[0-3]\d{8}$/.test(s) && !out.partners.includes(s.slice(-4))) out.partners.push(s.slice(-4));
+    const h = heads(i);
+    // כותרת של עמודות שיעורי מס. ברווח הון כתוב "שיעור מס", ובדיבידנד ובריבית "שיעור ניכוי המס במקור" (לפעמים בשורה נפרדת).
+    if (h.length >= 4) {
+      if (/שיעורמס/.test(c) && !/ניכוי/.test(c)) mode = 'gains';
+      else { block += 1; mode = block === 1 ? 'div' : 'int'; }
+      cols = h; row = null; return;
+    }
+    if (mode === 'gains') {
+      if (/מחזורמכירות/.test(c)) { mode = 'after'; out.turnover = valueAt(i, 360) ?? out.turnover; return; }
+      if (/רווחיםחייביםבמסלמעט/.test(c)) row = 'gains';
+      else if (/רווחיםחייביםממכירתיחידות/.test(c)) row = 'oil';
+      else if (/רווחיםפטורים/.test(c)) row = 'exempt';
+      else if (/הפסדיםשאינםבריקיזוז/.test(c)) row = 'nonOffset';
+      else if (/הפסדיםבמכירתמניותקרן/.test(c)) row = 'reit';
+      else if (/^הפסדים/.test(c) && /בריקיזוז/.test(c)) row = 'losses';
+      for (const n of nums(i)) {
+        if (row === 'gains') { add(out.gains, nearest(cols, n.c), n.v); out.hasGains = true; }
+        else if (row === 'losses' || row === 'reit') { out.losses += n.v; out.hasGains = true; }
+        else if (row === 'nonOffset') out.nonOffsetLosses += n.v;
+        else if (row === 'exempt') out.exemptGains += n.v;
+        else if (row === 'oil') out.oilGains += n.v;
+      }
+      return;
+    }
+    if (mode === 'after') {
+      if (out.turnover == null && line.items.every((s) => NUM.test(s))) { const n = nums(i); if (n.length) out.turnover = n[0].v; }
+      if (/^מסשנוכהבמקור$/.test(c) || (/מסשנוכהבמקור/.test(c) && !/מדיבידנד|מריבית/.test(c))) out.gainsTax = valueAt(i, 360);
+      return;
+    }
+    if (mode === 'div' || mode === 'int') {
+      const num = line.items.find((s) => /^\d{1,2}$/.test(s) && center(rawLines[i].pos[line.items.indexOf(s)]) > 550);
+      if (num) row = Number(num);
+      if (/מסשנוכהבמקורמדיבידנד/.test(c)) { out.dividendTax = nums(i, 200)[0]?.v ?? 0; return; }
+      if (/מסשנוכהבמקורמריבית/.test(c)) { out.interestTax = nums(i, 200)[0]?.v ?? 0; return; }
+      if (/החזרבגיןקיזוזהפסדיהון/.test(c)) { out.lossRefund = nums(i, 200)[0]?.v ?? 0; }
+      if (/ניכויבמקורנטו/.test(c)) return;
+      if (/מסששולםבחו/.test(c) && /שהותר/.test(c) && !/שלאהותר/.test(c)) { const v = nums(i, 400).filter((n) => n.c < 420)[0]; if (v?.v) out.foreignTax += v.v; return; }
+      const target = mode === 'div' && row === 1 ? out.dividends : mode === 'int' && row === 7 ? out.interest : null;
+      if (target && !/^\(?\d\)?$/.test(c)) {
+        for (const n of nums(i, 360)) { add(target, nearest(cols, n.c), n.v); out.hasDividends = true; }
+      }
+    }
+  });
+  if (out.dividendTax == null && /דיבידנדוריביתמניירותערך/.test(all)) out.dividendTax = 0;
+  if (out.interestTax == null && /דיבידנדוריביתמניירותערך/.test(all)) out.interestTax = 0;
+  return out;
 }
 
 // טבלת אישור תשלומי אבטלה: בחלק מהשורות יש תאים ריקים, ולכן משייכים כל סכום לכותרת העמודה הקרובה אליו.
@@ -261,5 +344,41 @@ export function summarizeDocs(docs, year) {
   const unknown = forYear.filter((d) => d.type === 'unknown');
   const residency = docs.find((d) => d.type === 'residency') || null;
   const bankProof = docs.find((d) => d.type === 'bankProof') || null;
-  return { residency, bankProof, summary, forms, expected, missing, employers, btlAnnual, certs, legacy, unknown, issues };
+  const accounts = mergeAccounts(forYear.filter((d) => d.type === 'form867'), issues);
+  return { residency, bankProof, summary, forms, expected, missing, employers, btlAnnual, certs, legacy, unknown, issues, accounts };
+}
+
+// כמה קבצי 867 של אותו חשבון (למשל 867 א+ב בקובץ אחד ו-867 ג בקובץ אחר) מתאחדים לחשבון אחד.
+// קובץ שאותו חלק שלו כבר הועלה לא נספר פעמיים.
+function mergeAccounts(docs, issues) {
+  const out = [];
+  const addAll = (to, from) => { for (const [k, v] of Object.entries(from || {})) to[k] = (to[k] || 0) + v; };
+  for (const d of docs) {
+    const key = d.account || d.fileName;
+    let a = out.find((x) => x.key === key);
+    if (!a) out.push(a = { key, account: d.account, partners: [], gains: {}, dividends: {}, interest: {}, losses: 0, nonOffsetLosses: 0, exemptGains: 0, oilGains: 0,
+      turnover: 0, gainsTax: 0, dividendTax: 0, interestTax: 0, foreignTax: 0, lossRefund: 0, partGains: false, partDiv: false, sources: [], ok: true });
+    for (const t of d.partners || []) if (!a.partners.includes(t)) a.partners.push(t);
+    if (!d.ok) a.ok = false;
+    let used = false;
+    if (d.partGains) {
+      if (a.partGains) issues.push(`"${d.fileName}": את רווח ההון של חשבון ${key} כבר העלית בקובץ אחר. הוא נכלל פעם אחת.`);
+      else {
+        a.partGains = used = true;
+        addAll(a.gains, d.gains);
+        a.losses += d.losses; a.nonOffsetLosses += d.nonOffsetLosses; a.exemptGains += d.exemptGains; a.oilGains += d.oilGains;
+        a.turnover += d.turnover || 0; a.gainsTax += d.gainsTax || 0;
+      }
+    }
+    if (d.partDiv) {
+      if (a.partDiv) issues.push(`"${d.fileName}": את הדיבידנד והריבית של חשבון ${key} כבר העלית בקובץ אחר. הם נכללו פעם אחת.`);
+      else {
+        a.partDiv = used = true;
+        addAll(a.dividends, d.dividends); addAll(a.interest, d.interest);
+        a.dividendTax += d.dividendTax || 0; a.interestTax += d.interestTax || 0; a.foreignTax += d.foreignTax || 0; a.lossRefund += d.lossRefund || 0;
+      }
+    }
+    if (used) a.sources.push(d.fileName);
+  }
+  return out;
 }
