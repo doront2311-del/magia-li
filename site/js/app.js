@@ -79,16 +79,19 @@ function renderScreen(ctx) {
     ${q.yn('screen.resident', 'היית תושב/ת ישראל בכל השנים האלה?')}
     ${q.yn('screen.oleh', 'עלית לארץ או חזרת אחרי תקופה ארוכה בחו"ל (תושב חוזר) בעשר השנים האחרונות?')}`;
   const OUT_YEARS = 'את השנים האלה האפליקציה עוד לא יודעת לחשב, ונמליץ עליהן על רואה חשבון. את שאר השנים נבדוק כרגיל.';
-  if (sel.length) {
+  {
+    const yrs = (path) => sel.length ? `<div class="sub">${years(path, 'באילו שנים?', OUT_YEARS, sel)}</div>` : '<div class="sub help">בוחרים קודם שנים למעלה, ואז נשאל באילו מהן.</div>';
     html += q.yn('screen.otherIncome', 'היו לך (או לבן/בת הזוג) באחת השנים שבחרת הכנסות מקריפטו, ממניות בחשבון מסחר בחו"ל (ברוקר זר), ממניות או אופציות שקיבלת מהמעסיק (RSU או סעיף 102), הכנסות אחרות מחו"ל, או שכר דירה על נכס שהוא לא דירת מגורים (למשל חנות או משרד)?',
       'על חשבון מסחר בבנק או בבית השקעות בישראל, ועל שכר דירה מדירת מגורים שלא שילמת עליו מס, נשאל בהמשך. אלה כן נתמכים.');
-    if (get('screen.otherIncome') === 'yes') html += `<div class="sub">${years('screen.otherYears', 'באילו שנים?', OUT_YEARS, sel)}</div>`;
+    if (get('screen.otherIncome') === 'yes') html += yrs('screen.otherYears');
     html += q.yn('screen.severance', 'באחת השנים שבחרת, קיבלת (או בן/בת הזוג) כסף לחשבון הבנק מפיצויים, או משכת כסף מקופת פנסיה, גמל או קרן השתלמות לפני הזמן?',
       'אם עזבת עבודה והפיצויים נשארו בקרן הפנסיה ולא משכת אותם, עונים "לא". המעסיק אולי נתן לך טופס 161, אבל אם הכסף לא יצא מהקרן אין כאן הכנסה לדווח עליה. קרן השתלמות אחרי 6 שנים: גם "לא".');
-    if (get('screen.severance') === 'yes') html += `<div class="sub">${years('screen.sevYears', 'באילו שנים?', OUT_YEARS, sel)}</div>`;
+    if (get('screen.severance') === 'yes') html += yrs('screen.sevYears');
+    html += q.yn('screen.privatePension', 'באחת השנים שבחרת, הפקדת בעצמך לפנסיה או לקופת גמל (לא דרך המעסיק)?', 'הכוונה להפקדה שעשית בעצמך מהחשבון שלך. הפקדות שיורדות מהמשכורת לא נחשבות כאן.');
+    if (get('screen.privatePension') === 'yes') html += yrs('screen.pensionYears');
     html += q.yn('screen.rentTaxed', 'באחת השנים שבחרת, קיבלת (או בן/בת הזוג) שכר דירה על דירת מגורים, ושילמת עליו מס לרשות המסים (במסלול 10%, או במסלול הרגיל לפי המדרגות)?',
       'אם קיבלת שכר דירה ולא דיווחת ולא שילמת עליו מס, עונים "לא". על זה נשאל בהמשך, וזה נתמך.');
-    if (get('screen.rentTaxed') === 'yes') html += `<div class="sub">${years('screen.rentTaxedYears', 'באילו שנים?', OUT_YEARS, sel)}</div>`;
+    if (get('screen.rentTaxed') === 'yes') html += yrs('screen.rentTaxedYears');
   }
   html += '</div>';
   const out = [];
@@ -99,6 +102,7 @@ function renderScreen(ctx) {
   const outYears = new Set();
   const yearCase = [['otherIncome', 'otherYears', 'היו הכנסות מקריפטו, מברוקר בחו"ל, ממניות מהמעסיק, מחו"ל או משכירות של נכס שאינו דירת מגורים'],
     ['severance', 'sevYears', 'היו פיצויים או משיכה מקופת פנסיה, גמל או קרן השתלמות'],
+    ['privatePension', 'pensionYears', 'הפקדת בעצמך לפנסיה או לקופת גמל. זה עוד לא נתמך'],
     ['rentTaxed', 'rentTaxedYears', 'שילמת מס על שכר דירה במסלול 10% או במסלול הרגיל']];
   const partly = [];
   for (const [k, ys, why] of yearCase) {
@@ -137,10 +141,10 @@ function renderMe(ctx) {
   if (get('me.served') === 'yes') {
     html += `<div class="sub">${q.choice('me.serviceType', 'איזה שירות?', [['army', 'צבאי'], ['national', 'שירות לאומי / אזרחי']])}
       ${q.choice('me.serviceLength', 'כמה זמן שירתת בשירות הסדיר?', [['full', get('me.serviceType') === 'national' ? '24 חודשים ומעלה' : 'גבר: 23 חודשים ומעלה. אישה: 22 חודשים ומעלה'], ['partial', 'לפחות 12 חודשים, אבל פחות מזה'], ['short', 'פחות מ-12 חודשים']], 'שירות מלא = 2 נקודות זיכוי בשנה. שירות חלקי (12 חודשים ומעלה) = נקודה אחת בשנה. לא כולל תקופות של מאסר או נפקדות.')}
-      ${q.yn('me.career', 'המשכת לשירות קבע מיד אחרי השירות הסדיר?', 'בשירות קבע החישוב שונה, והמקורות לא מסכימים איך בדיוק.')}
-      ${q.num('me.dischargeYear', 'באיזו שנה השתחררת מהשירות הסדיר?', 'מספיק שנה. חודש נבקש רק אם הוא משנה את התוצאה.', { min: 1960, max: 2030 })}`;
-    if (dischargeNeedsMonth()) html += q.num('me.dischargeMonth', 'באיזה חודש השתחררת? (1–12)', 'הזכאות מתחילה בחודש שאחרי השחרור ונמשכת 36 חודשים. באחת השנים שבחרת היא מתחילה או נגמרת, ולכן החודש קובע כמה נקודות מגיעות בה.', { min: 1, max: 12 });
-    else if (get('me.dischargeYear')) html += '<div class="help">בשנים שבחרת הזכאות נמשכת את כל השנה, ולכן לא צריך את החודש המדויק.</div>';
+      ${q.yn('me.career', 'מיד בסוף השירות הסדיר חתמת קבע והמשכת לשרת?', 'עונים "כן" רק אם עברת לשירות קבע ישר מהשירות הסדיר, בלי הפסקה. אם השתחררת ורק אחר כך חזרת לצבא (או לא חזרת בכלל), עונים "לא".')}
+      ${q.num('me.dischargeYear', 'באיזו שנה השתחררת מהשירות הסדיר?', 'השנה שכתובה בתעודת השחרור.', { min: 1960, max: 2030 })}`;
+    if (dischargeNeedsMonth()) html += q.num('me.dischargeMonth', 'באיזה חודש השתחררת? (1–12)', 'לפי תעודת השחרור. 3 השנים של נקודות הזיכוי מתחילות בחודש שאחרי השחרור, והחודש קובע כמה נקודות מגיעות לך בכל אחת מהשנים שבחרת. הוא גם נכנס לדו"ח (שדה 224).', { min: 1, max: 12 });
+    else if (get('me.dischargeYear')) html += '<div class="help">השחרור היה לפני יותר מ-3 שנים מכל השנים שבחרת, ולכן אין בהן נקודות זיכוי של חייל משוחרר, ולא צריך את החודש.</div>';
     html += '</div>';
   }
   html += '</div>';
@@ -152,7 +156,7 @@ function renderMe(ctx) {
 function dischargeNeedsMonth() {
   const sy = Number(get('me.dischargeYear'));
   if (!sy) return false;
-  return (get('screen.selectedYears') || []).some((y) => y === sy || y === sy + 3);
+  return (get('screen.selectedYears') || []).some((y) => y >= sy && y <= sy + 3);
 }
 function selText() {
   const sel = get('screen.selectedYears') || [];
@@ -197,7 +201,7 @@ const howtoBtl = (base, year) => `<details class="howto" open><summary>איך מ
 const HOWTO_BANK = `<details class="howto" open><summary>איך מורידים אישור ניהול חשבון</summary><ol>
   <li>צריך אותו כי ענית שלא קיבלת בעבר החזר לחשבון הזה, או שאתה לא בטוח. רשות המסים מעבירה את ההחזר רק לחשבון שעל שמך.</li>
   <li>מורידים אותו מהאפליקציה או מהאתר של הבנק. בדרך כלל הוא נקרא "אישור ניהול חשבון" או "אישור על ניהול חשבון", ולוקח דקה.</li></ol></details>`;
-const NAMING_TIP = `<div class="notice info small"><b>טיפ:</b> חלק מהאתרים שומרים קבצים בשם של מספרים ואותיות (למשל <bdi dir="ltr">a8f3k29.pdf</bdi>). כשמורידים, כדאי לתת לכל קובץ שם ברור עם השנה ומה יש בו, ולשמור את כל הקבצים של שנה בתיקייה אחת. למשל:
+const NAMING_TIP = `<div class="notice tip"><b>טיפ: לשנות את שם הקובץ מיד אחרי כל הורדה.</b> חלק מהאתרים שומרים קבצים בשם של מספרים ואותיות (למשל <bdi dir="ltr">a8f3k29.pdf</bdi>). כשמורידים, כדאי לתת לכל קובץ שם ברור עם השנה ומה יש בו, ולשמור את כל הקבצים של שנה בתיקייה אחת. למשל:
   <bdi>2021-ריכוז-נתוני-שכר.pdf</bdi>, <bdi>2021-106-שם-המעסיק.pdf</bdi>, <bdi>2021-ביטוח-לאומי-אישור-תשלומים-שנתי.pdf</bdi>. אחרי ההעלאה נציע שם לכל קובץ שזיהינו, ואפשר לשמור עותק בשם הזה.</div>`;
 const BTL_LABELS = { miluim: 'תגמולי מילואים', unemployment: 'דמי אבטלה', maternity: 'דמי לידה', injury: 'דמי פגיעה בעבודה' };
 
@@ -272,18 +276,19 @@ function partialFrom(s, base, year) {
   return { blocks, excluded, filingDocs, adjust };
 }
 
+// שורה ברשימת מסמכים: תיבה אפורה ריקה, ואחרי שהמסמך הועלה וי ירוק וקו על שם המסמך.
+const docRow = (name, ok, sub = '') => `<tr class="docrow${ok ? ' done' : ''}"><td><span class="box" aria-label="${ok ? 'הועלה' : 'עוד לא הועלה'}">${ok ? '✓' : ''}</span></td><td><b class="docname">${esc(name)}</b>${sub ? `<div class="small muted">${sub}</div>` : ''}</td></tr>`;
 // רשימת הסימון: מה צריך להוריד מכל אתר, ומה כבר הועלה. מתעדכנת לבד לפי הקבצים שהאפליקציה זיהתה.
 function checklist(base, year, who) {
   const { s, btl } = docsState(base, year);
   const docs = get(`${base}.docs`) || [];
-  const mark = (ok) => ok ? '<span class="ok">✓ הועלה</span>' : '<span class="todo">☐ עוד לא</span>';
   const tax = [[`"למסמך ריכוז הכנסות" ${year} (ריכוז נתוני שכר)`, !!s.summary]];
   if (s.summary) for (const e of s.expected) tax.push([`"להצגת טופס 106" של ${e.name}`, !s.missing.some((m) => m.taxFile === e.taxFile)]);
   else tax.push([`"להצגת טופס 106" ליד כל מעסיק (אחרי שתעלה את הריכוז נראה כאן את כולם)`, docs.some((d) => d.type === '106')]);
   const bl = [[`${BTL_DOCS.annual} ${year}`, !!s.btlAnnual]];
   for (const b of s.btlAnnual?.benefits || []) bl.push([`${BTL_DOCS[b.kind] || BTL_LABELS[b.kind]} ${year}`, btl.some((x) => x.kind === b.kind && x.taxWithheld != null)]);
   if (miluimNeeded(base)) bl.push([`${BTL_DOCS.miluim} ${year}`, s.certs.some((c) => c.kind === 'miluim')]);
-  const rows = (list) => list.map(([n, ok]) => `<tr><td>${mark(ok)}</td><td><b>${esc(n)}</b></td></tr>`).join('');
+  const rows = (list) => list.map(([n, ok]) => docRow(n, ok)).join('');
   return `<div class="card sub checklist"><b>מה צריך להוריד ${who === 'spouse' ? 'לבן/בת הזוג' : ''} לשנת ${year}</b>
     <table class="files"><tr><td colspan="2" class="small muted">מרשות המסים (האזור האישי ← "טפסי 106" ← "מידע מרוכז מהמעסיקים")</td></tr>${rows(tax)}
     <tr><td colspan="2" class="small muted">מביטוח לאומי (האזור האישי ← "אישורים")</td></tr>${rows(bl)}</table>
@@ -294,12 +299,13 @@ function renderPersonDocs(q, base, who, year) {
   if (get(`${base}.mode`) === 'manual') return renderManualDocs(q, base, who, year);
   const pron = who === 'spouse' ? 'של בן/בת הזוג' : 'שלך';
   const docs = get(`${base}.docs`) || [];
-  let html = `<h3>מסמכים ${pron} לשנת ${year}</h3>
+  let html = `${q.choice(`${base}.miluimDirect`, `עשית${who === 'spouse' ? ' (בן/בת הזוג)' : ''} מילואים בשנת ${year} ושולם ${who === 'spouse' ? 'לו/לה' : 'לך'} ישירות מביטוח לאומי (לא דרך המשכורת)?`, [['yes', 'כן'], ['no', 'לא'], ['unsure', 'לא בטוח/ה']], 'אם התגמול הגיע עם המשכורת, הוא כבר בטופס 106. אם הוא נכנס לבנק מביטוח לאומי, או שאתה לא בטוח, צריך גם את האישור השנתי על תגמולי מילואים. התשובה כאן מעדכנת את רשימת המסמכים למטה.')}
+    <h3>מסמכים ${pron} לשנת ${year}</h3>
     <p>מעלים את הקבצים, והאפליקציה ממלאת את המספרים לבד. הקבצים נקראים בתוך הדפדפן ולא יוצאים מהמחשב.</p>
-    ${q.choice(`${base}.miluimDirect`, `עשית${who === 'spouse' ? ' (בן/בת הזוג)' : ''} מילואים בשנת ${year} ושולם ${who === 'spouse' ? 'לו/לה' : 'לך'} ישירות מביטוח לאומי (לא דרך המשכורת)?`, [['yes', 'כן'], ['no', 'לא'], ['unsure', 'לא בטוח/ה']], 'אם התגמול הגיע עם המשכורת, הוא כבר בטופס 106. אם הוא נכנס לבנק מביטוח לאומי, או שאתה לא בטוח, צריך גם את האישור השנתי על תגמולי מילואים. התשובה כאן מעדכנת את רשימת המסמכים למטה.')}
-    <div class="notice info"><b>לפני שנכנסים לאתרים: עוברים על ההסבר כאן למטה.</b> יש בהם הכפתורים שמובילים בדיוק למקום הנכון באתרים, ואת השמות המדויקים של הקבצים.</div>
+    <div class="notice important"><b>⚠ לפני שנכנסים לאתרים: קוראים בקפידה את כל ההסבר כאן למטה, עד הסוף.</b> יש בו את הכפתורים שמובילים בדיוק למקום הנכון באתרים, ואת השמות המדויקים של הקבצים. מי שמדלג על ההסבר בדרך כלל מפספס מסמך, וצריך לחזור לאתר שוב.</div>
+    ${NAMING_TIP}
     ${checklist(base, year, who)}
-    ${HOWTO_SUMMARY}${howtoBtl(base, year)}${NAMING_TIP}
+    ${HOWTO_SUMMARY}${howtoBtl(base, year)}
     <label class="drop"><input type="file" accept="application/pdf,.pdf" multiple data-upload="${base}" data-upyear="${year}">
       <b>בחירת קבצי PDF</b><span class="small muted">אפשר לבחור כמה קבצים ביחד, ולהוסיף עוד אחר כך</span></label>`;
   if (state.ui.reading === base) html += '<div class="notice info">קורא את הקבצים…</div>';
@@ -478,13 +484,11 @@ function renderExtraYear(ctx, year) {
   if (get(`${y}.lifeIns`) === 'yes') html += `<div class="sub">${q.num(`${y}.lifeInsAmount`, 'סכום הפרמיות בשנה לפי האישור', 'מעתיקים מהאישור השנתי. איפה מוצאים אותו: ברשימת המסמכים למטה.')}</div>`;
   html += q.yn(`${y}.disability`, `שילמת בשנת ${year} ביטוח אובדן כושר עבודה פרטי (לא דרך המעסיק)?`);
   if (get(`${y}.disability`) === 'yes') html += `<div class="sub">${q.num(`${y}.disabilityAmount`, 'סכום ששילמת בשנה', 'מעתיקים מהאישור השנתי של חברת הביטוח. איפה מוצאים אותו: ברשימת המסמכים למטה.')}</div>`;
-  html += q.yn(`${y}.privatePension`, `הפקדת בעצמך לפנסיה או לקופת גמל בשנת ${year} (לא דרך המעסיק)?`);
   html += q.yn(`${y}.donations`, `תרמת בשנת ${year} למוסד מוכר (סעיף 46) עם קבלה?`);
   if (get(`${y}.donations`) === 'yes') html += `<div class="sub">${q.num(`${y}.donationsAmount`, 'סכום התרומות בשנה', 'סוכמים את הקבלות.')}</div>`;
   html += q.yn(`${y}.institution`, `שילמת בשנת ${year} על אחזקת קרוב משפחה במוסד (ילד, בן/בת זוג או הורה)?`);
   if (get(`${y}.institution`) === 'yes') html += `<div class="sub">${q.num(`${y}.institutionAmount`, 'סכום ששילמת בשנה', 'סוכמים את הקבלות מהמוסד.')}</div>`;
 
-  if (secYear(year)) html += renderSecurities(q, year);
   const out = yearOut(year);
   if (out) return html + `<div class="notice warn"><b>את ${year} האפליקציה לא תחשב.</b> ${out}<br>את שאר השנים שבחרת נחשב כרגיל. טעית בתשובה? פשוט משנים אותה כאן.</div></div>`;
   html += renderExtraDocs(year);
@@ -508,7 +512,7 @@ function renderExtraDocs(year) {
   const has = (k) => attachHas(year, k);
   let html = `<h3>מסמכים לצרף לשנת ${year}</h3>
     <p>את המסמכים האלה האפליקציה לא קוראת, כי כל גוף מוציא אותם אחרת. מעלים אותם כאן, ומסמנים ליד כל קובץ מה הוא. ככה הם יופיעו ברשימת הצרופות במדריך.</p>
-    <table class="files">${needs.map((a) => `<tr><td>${has(a.key) ? '<span class="ok">✓ הועלה</span>' : '<span class="todo">☐ עוד לא</span>'}</td><td><b>${esc(a.doc)}</b><div class="small muted">${esc(a.why)}. איפה מוצאים: ${esc(EXTRA_HOWTO[a.key] || '')}</div></td></tr>`).join('')}</table>
+    <table class="files">${needs.map((a) => docRow(a.doc, has(a.key), `${esc(a.why)}. איפה מוצאים: ${esc(EXTRA_HOWTO[a.key] || '')}`)).join('')}</table>
     <label class="drop"><input type="file" accept="application/pdf,.pdf,image/*" multiple data-upload="${base}" data-upyear="${year}">
       <b>בחירת קבצים</b><span class="small muted">PDF או תמונה. אפשר כמה ביחד</span></label>`;
   if (state.ui.reading === base) html += '<div class="notice info">קורא את הקבצים…</div>';
@@ -529,11 +533,11 @@ function renderExtras(ctx) {
     <p class="muted">כמה שאלות על דברים שמזכים בהנחה במס או שצריך לדווח עליהם, ואילו מסמכים לצרף בגללם. לכל מסמך כתוב איפה מוצאים אותו.</p>
     <div class="card">
     ${q.choice('me.prevRefund', 'קיבלת בעבר החזר מרשות המסים לחשבון הבנק שאליו תבקש את ההחזר הפעם?', [['yes', 'כן'], ['no', 'לא'], ['unsure', 'לא בטוח/ה']], 'אם לא, או שלא בטוח, מצרפים אישור ניהול חשבון. מורידים אותו מהאפליקציה של הבנק, וזה לוקח דקה.')}`;
-  if (needsBank()) {
+  if (['no', 'unsure'].includes(get('me.prevRefund'))) {
     const base = 'extras.bank';
     const docs = get(`${base}.docs`) || [];
     html += `<div class="sub">${HOWTO_BANK}
-      <table class="files"><tr><td>${bankOk() ? '<span class="ok">✓ הועלה</span>' : '<span class="todo">☐ עוד לא</span>'}</td><td><b>"אישור ניהול חשבון" מהבנק</b><div class="small muted">אחד מספיק לכל השנים</div></td></tr></table>
+      <table class="files">${docRow('"אישור ניהול חשבון" מהבנק', bankOk(), 'אחד מספיק לכל השנים')}</table>
       <label class="drop"><input type="file" accept="application/pdf,.pdf,image/*" data-upload="${base}"><b>העלאת אישור ניהול החשבון</b></label>
       ${docs.length ? `<table class="files">${docs.map((d, i) => `<tr><td>${(d.tags || []).includes('bank') ? '✓' : '⚠'}</td><td><bdi dir="ltr">${esc(d.fileName)}</bdi><div class="small"><label class="tag"><input type="checkbox" data-tag="${base}|${i}|bank" ${(d.tags || []).includes('bank') ? 'checked' : ''}> זה אישור ניהול החשבון</label></div></td><td class="actions"><button class="btn link" type="button" data-view="${base}|${i}">צפייה</button> <button class="btn link" type="button" data-rmdoc="${base}|${i}">הסרה</button></td></tr>`).join('')}</table>` : ''}
       ${bankOk() ? '' : '<div class="notice warn small">עוד לא סימנת את אישור ניהול החשבון. זה לא עוצר את החישוב: אפשר גם לצרף אותו ישירות באתר של רשות המסים.</div>'}</div>`;
@@ -544,7 +548,12 @@ function renderExtras(ctx) {
     ctx.req.push('screen.secYears');
     const v = get('screen.secYears') || [];
     const m = ctx.showMissing && !v.length ? ' missing' : '';
-    html += `<div class="sub"><div class="q${m}" data-q="screen.secYears"><div class="label">באילו שנים?</div><div class="choices">${sel.map((yr) => `<label><input type="checkbox" data-yearlist="screen.secYears" data-years="${yr}" ${v.includes(yr) ? 'checked' : ''}>${yr}</label>`).join('')}</div></div></div>`;
+    html += `<div class="sub"><div class="q${m}" data-q="screen.secYears"><div class="label">באילו שנים?</div><div class="choices">${sel.map((yr) => `<label><input type="checkbox" data-yearlist="screen.secYears" data-years="${yr}" ${v.includes(yr) ? 'checked' : ''}>${yr}</label>`).join('')}</div></div>`;
+    for (const yr of sel.filter(secYear)) {
+      const out = yearOut(yr);
+      html += `<div class="card sub">${out ? `<h3>חשבונות מסחר ב-${yr}</h3><div class="notice warn small">את ${yr} האפליקציה לא תחשב, ולכן לא צריך את טופס 867 שלה. ${esc(out)}</div>` : renderSecurities(q, yr)}</div>`;
+    }
+    html += '</div>';
   }
   html += '</div>';
   html += yearTabs(ctx, renderExtraYear);
@@ -706,6 +715,7 @@ function yearOutBase(year) {
   if (get(`${y}.marital`) === 'separated') return 'נשואים שחיים בנפרד מגישים עם טופס 4440, וזה עוד לא נתמך. מומלץ רואה חשבון.';
   if (get('screen.otherIncome') === 'yes' && (get('screen.otherYears') || []).includes(year)) return 'ענית שבשנה הזו היו הכנסות מקריפטו, מברוקר בחו"ל, ממניות מהמעסיק, מחו"ל או משכירות של נכס שאינו דירת מגורים. את זה האפליקציה עוד לא יודעת לחשב. מומלץ רואה חשבון.';
   if (get('screen.rentTaxed') === 'yes' && (get('screen.rentTaxedYears') || []).includes(year)) return 'ענית ששילמת בשנה הזו מס על שכר דירה במסלול 10% או במסלול הרגיל. צריך לדווח בדו"ח על שכר הדירה ועל המס ששולם, וזה עוד לא נתמך באפליקציה. מומלץ רואה חשבון.';
+  if (get('screen.privatePension') === 'yes' && (get('screen.pensionYears') || []).includes(year)) return 'הפקדה עצמאית לפנסיה עוד לא נתמכת. מומלץ רואה חשבון.';
   if (get('screen.severance') === 'yes' && (get('screen.sevYears') || []).includes(year)) return 'משיכת פיצויים או כספים מקופות דורשת חישוב של פטורים ופריסה, וזה עוד לא נתמך. מומלץ רואה חשבון.';
   return null;
 }
@@ -714,7 +724,6 @@ function yearOut(year) {
   if (base) return base;
   const rent = rentState(year);
   if (rent?.out) return rent.out;
-  if (get(`years.${year}.privatePension`) === 'yes') return 'הפקדה עצמאית לפנסיה עוד לא נתמכת. מומלץ רואה חשבון.';
   return null;
 }
 
